@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv_m4/
+venv_win/
+*.egg-info/
+
+# Modelos grandes (sobe separado via Git LFS)
+server/models/*.pt
+server/models/*.old.pt
+
+# Build
+dist/
+build/
+*.spec.bak
+
+# macOS
+.DS_Store
+*.dmg
+
+# Dataset de treino (pesado)
+server/data/
+server/runs/
+server/runs/
+server/data/
+*.pt

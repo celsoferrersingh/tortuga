@@ -1,0 +1,150 @@
+name: Build Tortuga
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:   # permite rodar manualmente no GitHub
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────
+  #  macOS ARM (Apple Silicon)
+  # ─────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-14          # runner ARM (M1)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11 ARM
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: arm64
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/pip
+          key: macos-arm-pip-${{ hashFiles('server/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install ultralytics opencv-python-headless numpy pyinstaller
+
+      - name: Prepare model placeholder
+        run: |
+          mkdir -p server/models
+          # Se não tiver modelo, cria placeholder para o build não falhar
+          if [ ! -f server/models/best.pt ]; then
+            python -c "
+          from ultralytics import YOLO
+          m = YOLO('yolov8n.pt')
+          import shutil; shutil.copy('yolov8n.pt', 'server/models/best.pt')
+          "
+          fi
+
+      - name: Build .app
+        run: |
+          python -m PyInstaller tortuga.spec --clean --noconfirm --log-level WARN
+
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "Tortuga PPE Monitor" \
+            -srcfolder dist/Tortuga.app \
+            -ov -format UDZO \
+            dist/Tortuga_macOS_ARM.dmg
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tortuga_macOS_ARM
+          path: dist/Tortuga_macOS_ARM.dmg
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────
+  #  Windows x86_64
+  # ─────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest    # Windows Server 2022 x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11 x86_64
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: x64
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: windows-x64-pip-${{ hashFiles('server/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install ultralytics opencv-python numpy pyinstaller pyinstaller-hooks-contrib
+
+      - name: Prepare model placeholder
+        shell: python
+        run: |
+          import os, shutil
+          os.makedirs("server/models", exist_ok=True)
+          if not os.path.exists("server/models/best.pt"):
+              from ultralytics import YOLO
+              YOLO("yolov8n.pt")
+              shutil.copy("yolov8n.pt", "server/models/best.pt")
+
+      - name: Build .exe
+        run: |
+          python -m PyInstaller tortuga.spec --clean --noconfirm --log-level WARN
+
+      - name: Package ZIP
+        run: |
+          Compress-Archive -Path dist\Tortuga.exe -DestinationPath dist\Tortuga_Windows_x64.zip
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tortuga_Windows_x64
+          path: dist\Tortuga_Windows_x64.zip
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────
+  #  Release automático ao criar tag v*
+  # ─────────────────────────────────────────────────────────
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Tortuga ${{ github.ref_name }}"
+          body: |
+            ## Tortuga PPE Monitor ${{ github.ref_name }}
+
+            ### Downloads
+            | Plataforma | Arquivo |
+            |---|---|
+            | macOS ARM (Apple Silicon) | `Tortuga_macOS_ARM.dmg` |
+            | Windows x86_64 | `Tortuga_Windows_x64.zip` |
+
+            ### Instalação
+            **macOS:** Abra o DMG e arraste para /Applications
+            **Windows:** Extraia o ZIP e execute `Tortuga.exe`
+          files: |
+            Tortuga_macOS_ARM/Tortuga_macOS_ARM.dmg
+            Tortuga_Windows_x64/Tortuga_Windows_x64.zip
