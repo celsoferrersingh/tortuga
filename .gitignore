@@ -6,9 +6,9 @@ venv_m4/
 venv_win/
 *.egg-info/
 
-# Modelos grandes (sobe separado via Git LFS)
-server/models/*.pt
-server/models/*.old.pt
+# Modelos — best.pt e best.old.pt sao versionados explicitamente
+!server/models/best.pt
+!server/models/best.old.pt
 
 # Build
 dist/
@@ -24,4 +24,4 @@ server/data/
 server/runs/
 server/runs/
 server/data/
-*.pt
+# *.pt  — permitido em server/models/ via regras acima
