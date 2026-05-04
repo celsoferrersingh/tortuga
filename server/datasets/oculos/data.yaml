@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['glasses', 'no_glasses']
+
+roboflow:
+  workspace: tiens-workspace-g0fps
+  project: safety-glasses-p7zzg
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/tiens-workspace-g0fps/safety-glasses-p7zzg/dataset/2
