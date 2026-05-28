@@ -62,10 +62,16 @@ def merge_datasets():
         if ds_dir.name == "merged" or not ds_dir.is_dir():
             continue
 
-        # Lê classes deste dataset
+        # Lê classes deste dataset — procura data.yaml na raiz ou subpasta
         yaml_file = ds_dir / "data.yaml"
         if not yaml_file.exists():
-            continue
+            # Alguns downloads colocam data.yaml numa subpasta
+            candidates = list(ds_dir.rglob("data.yaml"))
+            if not candidates:
+                print(f"  AVISO: {ds_dir.name} sem data.yaml — ignorando")
+                continue
+            yaml_file = candidates[0]
+            ds_dir = yaml_file.parent  # ajusta base para a subpasta
 
         with open(yaml_file) as f:
             ds_cfg = yaml.safe_load(f)
@@ -96,9 +102,10 @@ def merge_datasets():
                             continue
                         old_cls = ds_classes[old_id]
                         # Normaliza pelo mapeamento
-                        new_cls = CLASS_REMAP.get(old_cls, "").lower()
-                        if not new_cls:
-                            new_cls = old_cls  # mantém se não mapeado
+                        mapped = CLASS_REMAP.get(old_cls, "")
+                        if mapped is None:
+                            continue  # classe explicitamente ignorada (person, glove, etc.)
+                        new_cls = mapped.lower() if mapped else old_cls
                         new_id = class_to_id.get(new_cls)
                         if new_id is None:
                             continue  # classe não relevante para o projeto
