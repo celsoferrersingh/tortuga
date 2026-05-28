@@ -586,7 +586,7 @@ class PersonTracker:
             is_imm  = person.get("is_immediate") or person.get("is_zone")
             if (not is_imm
                     and person.get("posture") == POSTURE_ERGONOMIC
-                    and risk_ratio < 0.40):
+                    and risk_ratio < 0.50):
                 # Abaixa para seguro enquanto aguarda confirmação
                 person_out["posture"]      = POSTURE_SAFE
                 person_out["label"]        = POSTURE_LABELS[POSTURE_SAFE]
@@ -644,9 +644,10 @@ class PersonTracker:
                 "last_seen":    self._frame,
                 "updated":      False,
                 "session_rula": [],
-                # Buffer de suavização: evita flickering por 1 frame de ruído
-                # Só confirma risco se ≥40% dos últimos 8 frames apontaram risco
-                "risk_buf":     collections.deque([False]*4, maxlen=8),
+                # Buffer de suavização: janela de 6 frames, limiar 50%
+                # → confirma risco em ~3 frames consecutivos (~0.1 s a 30 fps)
+                # → ruído de 1-2 frames é ignorado
+                "risk_buf":     collections.deque([False]*3, maxlen=6),
             }
         return best_id
 
@@ -724,12 +725,12 @@ class PostureAnalyzer:
 
     def __init__(
         self,
-        trunk_bend_thresh: float = 45.0,   # ↑ era 40° — reduz falsos positivos
+        trunk_bend_thresh: float = 42.0,   # levemente acima de 40° para reduzir ruído
         fall_angle_thresh: float = 60.0,
-        arms_above_ratio:  float = 0.12,   # ↑ era 0.05 — exige elevação real do braço
+        arms_above_ratio:  float = 0.12,   # exige elevação real (≈20 cm acima do ombro)
         crouch_ratio:      float = 0.4,
         min_conf:          float = 0.25,
-        rula_trigger:      int   = 4,      # ↑ era 3 — score 3 só "investiga", não é risco
+        rula_trigger:      int   = 3,      # RULA≥3 = risco (3="investigar", 4="agir")
     ):
         self.trunk_bend  = trunk_bend_thresh
         self.fall_angle  = fall_angle_thresh
