@@ -233,6 +233,57 @@ def _elevation(p_base: np.ndarray, p_tip: np.ndarray) -> float:
     return float(math.degrees(math.acos(np.clip(cos_v, -1.0, 1.0))))
 
 
+def _is_plausible_person(kp: np.ndarray, min_conf: float = 0.25) -> tuple[bool, str]:
+    """
+    Verifica se os keypoints formam uma pessoa real (anatomicamente plausível).
+    Distingue trabalhador de máquina, manequim ou detecção espúria.
+
+    Retorna (True, "") se plausível, (False, motivo) caso contrário.
+    """
+    # 1. Mínimo de keypoints visíveis com boa confiança
+    vis = [i for i in range(17) if _visible(kp[i], min_conf)]
+    if len(vis) < 7:
+        return False, f"Poucos keypoints visíveis ({len(vis)}/17)"
+
+    ls = kp[KP["left_shoulder"]]; rs = kp[KP["right_shoulder"]]
+    lh = kp[KP["left_hip"]];     rh = kp[KP["right_hip"]]
+    nose = kp[KP["nose"]]
+
+    # 2. Ombros devem estar ACIMA dos quadris (± tolerância de câmera)
+    if all(_visible(kp[k], min_conf) for k in
+           [KP["left_shoulder"], KP["right_shoulder"],
+            KP["left_hip"],      KP["right_hip"]]):
+        sh_y = (float(ls[1]) + float(rs[1])) / 2
+        hp_y = (float(lh[1]) + float(rh[1])) / 2
+        if sh_y > hp_y + 30:          # ombro bem abaixo do quadril → invertido
+            return False, "Proporções invertidas (máquina?)"
+
+    # 3. Proporção tronco/ombro deve ser humana (0.4 a 4.0)
+    if all(_visible(kp[k], min_conf) for k in
+           [KP["left_shoulder"], KP["right_shoulder"],
+            KP["left_hip"],      KP["right_hip"]]):
+        sh_w  = abs(float(ls[0]) - float(rs[0])) + 1e-6
+        sh_y  = (float(ls[1]) + float(rs[1])) / 2
+        hp_y  = (float(lh[1]) + float(rh[1])) / 2
+        ratio = abs(hp_y - sh_y) / sh_w
+        if ratio < 0.3 or ratio > 5.0:
+            return False, f"Proporção tronco/ombro anômala ({ratio:.1f})"
+
+    # 4. Nariz deve estar ACIMA dos ombros
+    if _visible(nose, min_conf) and (_visible(ls, min_conf) or _visible(rs, min_conf)):
+        sh_ref_y = float(ls[1]) if _visible(ls, min_conf) else float(rs[1])
+        if float(nose[1]) > sh_ref_y + 60:    # nariz muito abaixo dos ombros
+            return False, "Cabeça abaixo dos ombros (objeto?)"
+
+    # 5. Membros bilaterais não podem ter distância absurda entre si
+    if _visible(ls, min_conf) and _visible(rs, min_conf):
+        sh_span = abs(float(ls[0]) - float(rs[0]))
+        if sh_span < 5:              # ombros colapsados → não é pessoa
+            return False, "Largura de ombros nula"
+
+    return True, ""
+
+
 def _bbox_iou(a, b) -> float:
     """IoU de dois bounding boxes (x1,y1,x2,y2)."""
     if a is None or b is None:
@@ -262,12 +313,19 @@ def _ua_rula(kp: np.ndarray, side: str) -> int:
 
 
 def _la_rula(kp: np.ndarray, side: str) -> int:
-    """Lower arm score RULA (1-2): ângulo no cotovelo."""
+    """Lower arm score RULA (1-2): ângulo no cotovelo.
+    Braço naturalmente caído (>150°) é tratado como score 1 —
+    não é uma postura de trabalho ativa e não deve gerar risco.
+    """
     sh = kp[KP[f"{side}_shoulder"]]; el = kp[KP[f"{side}_elbow"]]
     wr = kp[KP[f"{side}_wrist"]]
     if not all(_visible(p) for p in [sh,el,wr]): return 1
     ang = _angle_3pts(sh, el, wr)    # 180=estendido, 90=flexão 90°
-    return 1 if 60 <= ang <= 100 else 2
+    # 60-100° = cotovelo em uso correto  → 1
+    # >150°   = braço caído/relaxado     → 1 (não é tarefa ativa)
+    # demais  = posição de esforço       → 2
+    if 60 <= ang <= 100 or ang > 150: return 1
+    return 2
 
 
 def _wr_rula(kp: np.ndarray, side: str) -> int:
@@ -518,7 +576,25 @@ class PersonTracker:
             # Análise temporal
             temporal = self._analyze(track)
 
-            p = dict(person)
+            # ── Suavizamento temporal de risco ergonômico ────────────────
+            # Risco imediato/zona NUNCA é suavizado (segurança em primeiro lugar).
+            # Risco ergonômico só é confirmado se ≥40% dos últimos 8 frames
+            # também o indicaram — elimina falsos positivos por ruído de pose.
+            track["risk_buf"].append(person.get("is_any_risk", False))
+            risk_ratio = sum(track["risk_buf"]) / len(track["risk_buf"])
+            person_out = dict(person)
+            is_imm  = person.get("is_immediate") or person.get("is_zone")
+            if (not is_imm
+                    and person.get("posture") == POSTURE_ERGONOMIC
+                    and risk_ratio < 0.40):
+                # Abaixa para seguro enquanto aguarda confirmação
+                person_out["posture"]      = POSTURE_SAFE
+                person_out["label"]        = POSTURE_LABELS[POSTURE_SAFE]
+                person_out["color"]        = POSE_COLOR[POSTURE_SAFE]
+                person_out["is_ergonomic"] = False
+                person_out["is_any_risk"]  = False
+
+            p = person_out
             p["track_id"]      = tid
             p["temporal"]      = temporal
             p["session_avg_rula"] = (
@@ -563,11 +639,14 @@ class PersonTracker:
         if best_id == -1:
             best_id = self._next_id; self._next_id += 1
             self._tracks[best_id] = {
-                "history":    collections.deque(maxlen=self.MAX_HISTORY),
-                "last_bbox":  bbox,
-                "last_seen":  self._frame,
-                "updated":    False,
+                "history":      collections.deque(maxlen=self.MAX_HISTORY),
+                "last_bbox":    bbox,
+                "last_seen":    self._frame,
+                "updated":      False,
                 "session_rula": [],
+                # Buffer de suavização: evita flickering por 1 frame de ruído
+                # Só confirma risco se ≥40% dos últimos 8 frames apontaram risco
+                "risk_buf":     collections.deque([False]*4, maxlen=8),
             }
         return best_id
 
@@ -645,17 +724,19 @@ class PostureAnalyzer:
 
     def __init__(
         self,
-        trunk_bend_thresh: float = 40.0,
+        trunk_bend_thresh: float = 45.0,   # ↑ era 40° — reduz falsos positivos
         fall_angle_thresh: float = 60.0,
-        arms_above_ratio:  float = 0.05,
+        arms_above_ratio:  float = 0.12,   # ↑ era 0.05 — exige elevação real do braço
         crouch_ratio:      float = 0.4,
         min_conf:          float = 0.25,
+        rula_trigger:      int   = 4,      # ↑ era 3 — score 3 só "investiga", não é risco
     ):
-        self.trunk_bend = trunk_bend_thresh
-        self.fall_angle = fall_angle_thresh
-        self.arms_ratio = arms_above_ratio
-        self.crouch_r   = crouch_ratio
-        self.min_conf   = min_conf
+        self.trunk_bend  = trunk_bend_thresh
+        self.fall_angle  = fall_angle_thresh
+        self.arms_ratio  = arms_above_ratio
+        self.crouch_r    = crouch_ratio
+        self.min_conf    = min_conf
+        self.rula_trigger = rula_trigger
 
     def analyze(self, kp: np.ndarray, danger_zones: list | None = None) -> dict:
         result = {
@@ -669,7 +750,16 @@ class PostureAnalyzer:
             "reba_score": 0,
             "rula_action":"",
             "reba_risk":  "",
+            "is_person":  True,
         }
+
+        # ── Filtro de plausibilidade anatômica ────────────────
+        # Separa trabalhador real de máquina, manequim ou ruído
+        plausible, reason = _is_plausible_person(kp, self.min_conf)
+        if not plausible:
+            result["is_person"] = False
+            result["details"]   = [f"Nao identificado como pessoa: {reason}"]
+            return result
 
         # ── RULA / REBA (calculados sempre) ───────────────────
         rula = compute_rula(kp)
@@ -706,9 +796,9 @@ class PostureAnalyzer:
                 )
                 return result
 
-        # ── 3. Risco ergonômico (RULA ≥ 3 OU regras NR-17) ───
+        # ── 3. Risco ergonômico (RULA ≥ rula_trigger OU regras NR-17) ───
         ergo = self._check_ergonomic(kp)
-        rula_risk = rula["rula_score"] >= 3
+        rula_risk = rula["rula_score"] >= self.rula_trigger
 
         if ergo["detected"] or rula_risk:
             details = list(ergo["details"])
@@ -920,6 +1010,11 @@ class PoseEstimator:
                 posture = self.analyzer.analyze(
                     kp, self.danger_zones if self.danger_zones else None
                 )
+
+                # Descarta detecções anatomicamente inválidas (máquinas, objetos)
+                if not posture.get("is_person", True):
+                    log.debug("Detecção descartada: %s", posture["details"])
+                    continue
 
                 people.append({
                     "keypoints":    kp,
