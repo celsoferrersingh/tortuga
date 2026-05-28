@@ -586,7 +586,7 @@ class PersonTracker:
             is_imm  = person.get("is_immediate") or person.get("is_zone")
             if (not is_imm
                     and person.get("posture") == POSTURE_ERGONOMIC
-                    and risk_ratio < 0.50):
+                    and risk_ratio < 0.55):
                 # Abaixa para seguro enquanto aguarda confirmação
                 person_out["posture"]      = POSTURE_SAFE
                 person_out["label"]        = POSTURE_LABELS[POSTURE_SAFE]
@@ -644,10 +644,10 @@ class PersonTracker:
                 "last_seen":    self._frame,
                 "updated":      False,
                 "session_rula": [],
-                # Buffer de suavização: janela de 6 frames, limiar 50%
-                # → confirma risco em ~3 frames consecutivos (~0.1 s a 30 fps)
-                # → ruído de 1-2 frames é ignorado
-                "risk_buf":     collections.deque([False]*3, maxlen=6),
+                # Buffer de suavização: janela de 8 frames, limiar 55%
+                # → confirma risco em ~4-5 frames consecutivos (~0.15 s a 30 fps)
+                # → ruído de 1-3 frames esporádicos é ignorado
+                "risk_buf":     collections.deque([False]*4, maxlen=8),
             }
         return best_id
 
@@ -725,12 +725,17 @@ class PostureAnalyzer:
 
     def __init__(
         self,
-        trunk_bend_thresh: float = 42.0,   # levemente acima de 40° para reduzir ruído
+        trunk_bend_thresh: float = 40.0,   # NR-17: inclinação real do tronco
         fall_angle_thresh: float = 60.0,
-        arms_above_ratio:  float = 0.12,   # exige elevação real (≈20 cm acima do ombro)
+        arms_above_ratio:  float = 0.12,   # braço ≥12% da altura corporal acima do ombro
         crouch_ratio:      float = 0.4,
         min_conf:          float = 0.25,
-        rula_trigger:      int   = 3,      # RULA≥3 = risco (3="investigar", 4="agir")
+        rula_trigger:      int   = 6,      # RULA só aciona alarme em postura composta extrema
+        #                                   Notas de design:
+        #                                   RULA 1-5 = badge informativo (não alarme)
+        #                                   RULA 6-7 = postura composta severa → alarme
+        #                                   As regras NR-17 físicas (trunk/arms/crouch)
+        #                                   são a fonte primária do alarme em tempo real.
     ):
         self.trunk_bend  = trunk_bend_thresh
         self.fall_angle  = fall_angle_thresh
@@ -797,17 +802,29 @@ class PostureAnalyzer:
                 )
                 return result
 
-        # ── 3. Risco ergonômico (RULA ≥ rula_trigger OU regras NR-17) ───
-        ergo = self._check_ergonomic(kp)
-        rula_risk = rula["rula_score"] >= self.rula_trigger
+        # ── 3. Risco ergonômico ───────────────────────────────────────────
+        #
+        # FONTE PRIMÁRIA (tempo real, confiável):
+        #   Regras físicas NR-17 com limites claros e mensuráveis.
+        #   Tronco > 40°, braço > 12% acima do ombro, agachamento profundo.
+        #
+        # FONTE SECUNDÁRIA (postura composta extrema):
+        #   RULA ≥ 6 captura combinações severas não cobertas pelas 3 regras NR-17.
+        #   RULA 3-5 fica como badge informativo (não aciona alarme):
+        #     - RULA=3 ocorre em postura natural de trabalho (leve inclinação +
+        #       pescoço levemente baixado) — não é risco real contínuo.
+        #     - RULA estimado de vídeo 2D tem ruído de ±5-10° nos ângulos.
+        #
+        ergo      = self._check_ergonomic(kp)
+        rula_risk = rula["rula_score"] >= self.rula_trigger   # ≥6
 
         if ergo["detected"] or rula_risk:
             details = list(ergo["details"])
-            if rula_risk:
-                details.insert(0,
-                    f"RULA {rula['rula_score']}/7 — {rula['rula_action']}"
-                    f"  |  REBA {reba['reba_score']}/15 ({reba['reba_risk']})"
-                )
+            # Sempre mostra RULA/REBA nos detalhes, independente da fonte do alarme
+            details.insert(0,
+                f"RULA {rula['rula_score']}/7 — {rula['rula_action']}"
+                f"  |  REBA {reba['reba_score']}/15 ({reba['reba_risk']})"
+            )
             score = max(ergo.get("score", 0.0),
                         min(1.0, (rula["rula_score"] - 1) / 6.0))
             result.update(
@@ -820,7 +837,7 @@ class PostureAnalyzer:
             )
             return result
 
-        # Postura segura — adiciona RULA/REBA nos detalhes informativos
+        # Postura segura — RULA/REBA exibidos como informação (badge no vídeo)
         result["details"].append(
             f"RULA {rula['rula_score']}/7 ({rula['rula_action']})"
             f"  |  REBA {reba['reba_score']}/15 ({reba['reba_risk']})"
