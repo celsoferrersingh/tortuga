@@ -16,7 +16,11 @@ def create_app(db: Database, station_manager=None):
     @app.route("/")
     def dashboard():
         stations = db.get_all_stations()
-        available_epis = ["Hardhat", "Mask", "Safety Vest"]
+        # Lista alinhada com a Fase 1 (5 EPIs obrigatorios + Mascara extra).
+        available_epis = [
+            "Hardhat", "Safety Vest", "Safety Glasses",
+            "Ear Protection", "Safety Boots", "Mask",
+        ]
         return render_template(
             "dashboard.html",
             stations=stations,

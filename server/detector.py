@@ -29,6 +29,9 @@ _SAFE_KEYWORDS = {
     "hardhat", "helmet", "mask", "safety vest", "vest",
     "safety glasses", "glasses", "goggle", "glove",
     "safety shoe", "shield",
+    "ear protection", "ear_protection", "earmuff", "earmuffs",
+    "safety boots", "safety boot", "safety_boots", "safety_boot",
+    "boot", "boots",
 }
 _VIOLATION_PREFIXES = ("no-", "no_", "without ", "sem ")
 _VIOLATION_KEYWORDS = {
@@ -36,6 +39,20 @@ _VIOLATION_KEYWORDS = {
     "no-safety glasses", "no-glasses", "no-goggle", "no-glove",
     "no_hardhat", "no_helmet", "no_mask", "no_vest",
     "no_safety_glasses", "no_glasses", "no_goggle", "no_glove",
+}
+
+# Palavras-chave que indicam a PRESENCA de cada EPI. Usadas para inferir
+# AUSENCIA quando o modelo so tem classes positivas (ex.: modelo SH17, sem
+# classes NO-X): se um EPI obrigatorio nao aparece e ha pessoa em cena, e
+# tratado como violacao na camada de decisao.
+_EPI_PRESENT_KW = {
+    "Hardhat":        ["hardhat", "helmet", "capacete"],
+    "Mask":           ["mask", "mascara"],
+    "Safety Vest":    ["vest", "colete"],
+    "Safety Glasses": ["glass", "goggle", "oculos"],
+    "Ear Protection": ["ear protection", "earmuff", "ear-muff", "ear muff",
+                       "ear_protection", "protetor"],
+    "Safety Boots":   ["boot", "shoe", "bota"],
 }
 
 class _FakeModel:
@@ -247,6 +264,8 @@ class PPEDetector:
             "Mask":           ["no-mask",    "no_mask",    "nomask"],
             "Safety Vest":    ["no-safety vest", "no_safety_vest", "no-safety_vest", "no safety vest"],
             "Safety Glasses": ["no_glasses", "no-glasses", "no-safety glasses", "no_safety_glasses"],
+            "Ear Protection": ["no-ear protection", "no_ear_protection", "no-ear_protection", "no ear protection"],
+            "Safety Boots":   ["no-safety boots", "no_safety_boots", "no-safety_boots", "no safety boots"],
         }
 
         # Constrói conjunto de nomes de violação ativos
@@ -271,3 +290,56 @@ class PPEDetector:
                 filtered.append({**d, "is_violation": False, "color": COLOR_NEUTRAL})
 
         return filtered
+
+    @staticmethod
+    def missing_required(detections: list[dict], required_epis: list[str],
+                         person_present: bool) -> list[str]:
+        """
+        Detecta EPIs obrigatorios AUSENTES — essencial para modelos so-positivos
+        (SH17), que nao tem classe NO-X. Regra: havendo PESSOA em cena, todo EPI
+        ativo cuja classe 'presente' nao aparece em nenhuma deteccao e considerado
+        ausente (violacao). O escopo e definido pelos toggles da estacao: ative
+        apenas os EPIs que devem estar visiveis para o enquadramento da camera.
+        Retorna a lista de nomes de classe (ex.: ['Hardhat']) em falta.
+        """
+        if not person_present:
+            return []
+        present = [d["class_name"].lower() for d in detections
+                   if not d.get("is_violation")]
+        missing = []
+        for epi in required_epis:
+            kws = _EPI_PRESENT_KW.get(epi)
+            if not kws:
+                continue
+            if not any(any(kw in name for kw in kws) for name in present):
+                missing.append(epi)
+        return missing
+
+    @staticmethod
+    def epis_on_person(detections: list[dict], person_bbox, required_epis: list[str],
+                       margin: float = 0.15) -> list[str]:
+        """
+        Atribuicao MULTI-PESSOA: dado o bbox de UMA pessoa, retorna os EPIs
+        exigidos que estao AUSENTES nela. Um EPI conta como presente se o centro
+        da sua deteccao cai dentro do bbox da pessoa expandido por `margin`
+        (capta capacete um pouco acima da cabeca, bota um pouco abaixo dos pes).
+        """
+        if person_bbox is None:
+            return list(required_epis)
+        x1, y1, x2, y2 = person_bbox
+        w, h = (x2 - x1), (y2 - y1)
+        ex1, ey1 = x1 - w * margin, y1 - h * margin
+        ex2, ey2 = x2 + w * margin, y2 + h * margin
+        present: set[str] = set()
+        for d in detections:
+            if d.get("is_violation"):
+                continue
+            bx1, by1, bx2, by2 = d["bbox"]
+            cx, cy = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
+            if not (ex1 <= cx <= ex2 and ey1 <= cy <= ey2):
+                continue
+            name = d["class_name"].lower()
+            for epi, kws in _EPI_PRESENT_KW.items():
+                if any(kw in name for kw in kws):
+                    present.add(epi)
+        return [e for e in required_epis if e not in present]

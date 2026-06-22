@@ -24,29 +24,37 @@ from pathlib import Path
 
 DATASETS = [
     {
-        "name": "ppe-complete-v3",
-        "workspace": "construction-safety-gsnvb",
-        "project": "construction-site-safety",
-        "version": 30,
-        "classes_interest": ["Hardhat", "Safety Vest", "Gloves", "Mask",
-                              "Safety Glasses", "Ear Protection", "Safety Boots"],
-        "description": "Dataset abrangente de EPIs em obras — 10+ classes",
+        "name": "ppe-combined-44k",
+        "workspace": "roboflow-universe-projects",
+        "project": "personal-protective-equipment-combined-model",
+        "version": 8,
+        "classes_interest": ["Hardhat", "NO-Hardhat", "Safety Vest", "NO-Safety Vest",
+                              "Mask", "NO-Mask", "Goggles", "NO-Goggles"],
+        "description": "44k imagens PPE — grande diversidade de ambientes (obra, escritorio, industria)",
     },
     {
-        "name": "hearing-protection",
-        "workspace": "roboflow-universe-projects",
-        "project": "hearing-protection-detection",
+        "name": "safety-ppe-shoes",
+        "workspace": "safety-jmser",
+        "project": "safety_ppe",
+        "version": 23,
+        "classes_interest": ["Shoe", "No_Shoe", "Helmet", "No_Helmet", "Goggles", "No_Goggles"],
+        "description": "6.6k imagens com Safety Boots (Shoe/No_Shoe) e capacete variado",
+    },
+    {
+        # ATENCAO: este 'project/version' trouxe ANTES um dataset SEM protetor
+        # auricular (veio Boots/Helmet/Person/Vest). verify_classes() agora
+        # aborta esse caso. Confirme o slug correto no Roboflow Universe antes
+        # de usar, ou troque por uma das fontes recomendadas abaixo.
+        "name": "ear-protection",
+        "workspace": "siabar",
+        "project": "ppe-dataset-for-workplace-safety",
         "version": 1,
-        "classes_interest": ["ear_protection", "no_ear_protection"],
-        "description": "Dataset específico para protetor auricular",
-    },
-    {
-        "name": "safety-boots-ppe",
-        "workspace": "roboflow-universe-projects",
-        "project": "safety-shoes-detection",
-        "version": 2,
-        "classes_interest": ["safety_boots", "no_safety_boots", "regular_shoes"],
-        "description": "Dataset específico para botas de segurança",
+        "classes_interest": ["ear_protection", "no_ear_protection", "ear-protection",
+                              "earmuff", "hearing protection"],
+        "description": "FONTE DE PROTETOR AURICULAR — VERIFIQUE as classes! "
+                       "Alternativas confiaveis: SH17 (17 EPIs, inclui ear "
+                       "protection + boots) e datasets 'earmuff'/'hearing "
+                       "protection' do Roboflow Universe.",
     },
 ]
 
@@ -80,7 +88,9 @@ CLASS_REMAP = {
     "hard-hat":           "Hardhat",
     "no hardhat":         "NO-Hardhat",
     "no-hardhat":         "NO-Hardhat",
+    "no_hardhat":         "NO-Hardhat",
     "no helmet":          "NO-Hardhat",
+    "no_helmet":          "NO-Hardhat",   # safety_ppe dataset
     # Colete
     "safety vest":        "Safety Vest",
     "vest":               "Safety Vest",
@@ -88,27 +98,49 @@ CLASS_REMAP = {
     "hivis":              "Safety Vest",
     "no safety vest":     "NO-Safety Vest",
     "no-safety vest":     "NO-Safety Vest",
+    "no_safety_vest":     "NO-Safety Vest",
     "no vest":            "NO-Safety Vest",
-    # Óculos
+    # Óculos / Goggles
     "safety glasses":     "Safety Glasses",
     "glasses":            "Safety Glasses",
     "glass":              "Safety Glasses",   # SiaBar usa singular
-    "goggles":            "Safety Glasses",
+    "goggles":            "Safety Glasses",   # PPE Combined usa goggles
+    "goggle":             "Safety Glasses",
     "no glasses":         "NO-Safety Glasses",
     "no_glasses":         "NO-Safety Glasses",
     "no safety glasses":  "NO-Safety Glasses",
+    "no_goggles":         "NO-Safety Glasses", # PPE Combined + safety_ppe
+    "no-goggles":         "NO-Safety Glasses",
+    "no goggles":         "NO-Safety Glasses",
     # Máscara
     "mask":               "Mask",
     "face mask":          "Mask",
     "respirator":         "Mask",
     "no mask":            "NO-Mask",
     "no-mask":            "NO-Mask",
-    # Classes a ignorar (não são EPIs do projeto)
+    "no_mask":            "NO-Mask",
+    # Bota — safety_ppe usa "shoe" / "no_shoe"
+    "shoe":               "Safety Boots",
+    "no_shoe":            "NO-Safety Boots",
+    "no shoe":            "NO-Safety Boots",
+    # Classes a ignorar
     "person":             None,
     "glove":              None,
     "gloves":             None,
+    "no_glove":           None,
+    "no glove":           None,
     "worker":             None,
     "human":              None,
+    "ladder":             None,
+    "safety cone":        None,
+    "safety_cone":        None,
+    "fall-detected":      None,
+    "fall detected":      None,
+    "safety_harness":     None,
+    "safety harness":     None,
+    "no_harness":         None,
+    "no harness":         None,
+    "no_breathingapparatus": None,
 }
 
 OUTPUT_DIR = Path(__file__).parent / "datasets"
@@ -124,6 +156,37 @@ def check_roboflow():
         return False
 
 
+def verify_classes(location: str, entry: dict) -> None:
+    """
+    Confere se o dataset baixado REALMENTE contem as classes esperadas.
+    Esta verificacao existe porque um download anterior trouxe o projeto
+    errado: a pasta 'hearing-protection' veio com Boots/Helmet/Person/Vest
+    (NENHUM protetor auricular), e isso so foi descoberto depois de 12h de
+    treino. Agora o erro e detectado na hora do download.
+    """
+    import yaml as _yaml
+    yfile = Path(location) / "data.yaml"
+    if not yfile.exists():
+        cands = list(Path(location).rglob("data.yaml"))
+        if cands:
+            yfile = cands[0]
+    if not yfile.exists():
+        print("  [AVISO] data.yaml nao encontrado — nao foi possivel verificar classes.")
+        return
+    got = [c.lower() for c in _yaml.safe_load(open(yfile)).get("names", [])]
+    want = [c.lower() for c in entry.get("classes_interest", [])]
+    matched = [w for w in want if any(w in g or g in w for g in got)]
+    print(f"  Classes no dataset : {got}")
+    if want and not matched:
+        print("  " + "!" * 56)
+        print(f"  [ERRO] NENHUMA classe esperada {want} foi encontrada!")
+        print("         Este dataset NAO serve para o proposito declarado.")
+        print("         NAO inclua no merge — baixe a fonte correta.")
+        print("  " + "!" * 56)
+    elif want:
+        print(f"  [OK] Classes esperadas presentes: {matched}")
+
+
 def download_dataset(entry: dict, api_key: str):
     from roboflow import Roboflow
     rf = Roboflow(api_key=api_key)
@@ -136,6 +199,7 @@ def download_dataset(entry: dict, api_key: str):
         version  = project.version(entry["version"])
         dataset  = version.download("yolov8", location=str(OUTPUT_DIR / entry["name"]))
         print(f"  OK: {OUTPUT_DIR / entry['name']}")
+        verify_classes(dataset.location, entry)   # <<< pega download errado na hora
         return dataset.location
     except Exception as e:
         print(f"  AVISO: Falha ao baixar {entry['name']}: {e}")

@@ -80,11 +80,14 @@ PURPLE  = (195,  78, 168)
 TEAL    = (175, 185,  52)
 ORANGE  = ( 20, 100, 248)
 
-EPI_LIST = ["Hardhat", "Mask", "Safety Vest", "Safety Glasses"]
+EPI_LIST = ["Hardhat", "Mask", "Safety Vest", "Safety Glasses",
+            "Ear Protection", "Safety Boots"]
 EPI_PT   = {"Hardhat":"Capacete", "Mask":"Mascara",
-            "Safety Vest":"Colete", "Safety Glasses":"Oculos"}
+            "Safety Vest":"Colete", "Safety Glasses":"Oculos",
+            "Ear Protection":"Prot.Auricular", "Safety Boots":"Bota Seguranca"}
 EPI_COL  = {"Hardhat":BLUE, "Mask":PURPLE,
-            "Safety Vest":AMBER, "Safety Glasses":TEAL}
+            "Safety Vest":AMBER, "Safety Glasses":TEAL,
+            "Ear Protection":GREEN, "Safety Boots":ORANGE}
 
 FONT  = cv2.FONT_HERSHEY_DUPLEX
 FONT2 = cv2.FONT_HERSHEY_SIMPLEX
@@ -292,7 +295,7 @@ class Sidebar:
         T(img,"  EPIs Obrigatorios",P+int(10*S),y+int(3*S),sz=0.33*S,color=MUTED2)
         y += sec_h+int(4*S)
 
-        card_h = int(58*S)
+        card_h = int(46*S) if len(EPI_LIST) > 4 else int(58*S)
         for epi in EPI_LIST:
             on=self.states[epi]; ec=EPI_COL[epi]
             una=(epi=="Safety Glasses" and not self.has_glasses)
@@ -305,8 +308,10 @@ class Sidebar:
             if on and not una:
                 cv2.circle(img,(P+int(22*S),y+card_h//2),int(4*S),PANEL,-1)
             lc=ec if (on and not una) else MUTED2
-            T(img,EPI_PT[epi],P+int(38*S),y+int(8*S),sz=0.55*S,color=lc,bold=on and not una)
-            T(img,epi,P+int(38*S),y+int(34*S),sz=0.33*S,color=MUTED)
+            name_y = int(6*S) if card_h < int(55*S) else int(8*S)
+            sub_y  = int(24*S) if card_h < int(55*S) else int(34*S)
+            T(img,EPI_PT[epi],P+int(38*S),y+name_y,sz=0.50*S,color=lc,bold=on and not una)
+            T(img,epi,P+int(38*S),y+sub_y,sz=0.30*S,color=MUTED)
             if una:
                 rx1,ry1=W-P-int(88*S),y+int(16*S)
                 rrect(img,rx1,ry1,rx1+int(80*S),ry1+int(26*S),int(6*S),AMBER,fill=False,t=2)
@@ -545,7 +550,7 @@ def render_cam(frame, dets, has_v, fps, paused, fn, W, H,
         cv2.circle(out,(int(20*S),bar_h//2),int(9*S),GREEN,-1)
         cv2.circle(out,(int(20*S),bar_h//2),int(5*S),BG,-1)
         n_str=f"  {len(people)} pessoa(s)" if people else ""
-        T(out,f"AREA MONITORADA  —  SEGURO{n_str}",int(38*S),int(12*S),
+        T(out,f"AREA MONITORADA  -  SEGURO{n_str}",int(38*S),int(12*S),
           sz=0.60*S,color=TEXT)
 
     # FPS
@@ -573,9 +578,14 @@ def render_cam(frame, dets, has_v, fps, paused, fn, W, H,
 #  PIPELINE DE DETECCAO
 # ───────────────────────────────────────────────────────────
 class DetectionPipeline:
-    def __init__(self, camera, detector:PPEDetector, pose_estimator=None):
+    def __init__(self, camera, detector:PPEDetector, pose_estimator=None,
+                 det_size:int=640):
         self.det=detector; self._cam=camera
         self._pose=pose_estimator
+        # Resolucao de inferencia EPI. 640 = mesmo imgsz do treino.
+        # 320 (valor antigo) destruia EPIs pequenos (oculos, protetor
+        # auricular) que ficavam com ~10px e nao eram detectados.
+        self._det_size=max(320,int(det_size))
         self._run=True; self._pause=False
         self._raw_q: queue.Queue = queue.Queue(maxsize=2)
         self._pose_q:queue.Queue = queue.Queue(maxsize=2)
@@ -616,7 +626,7 @@ class DetectionPipeline:
         while self._run:
             try: f=self._raw_q.get(timeout=0.1)
             except queue.Empty: continue
-            h,w=f.shape[:2]; sc=320/max(h,w)
+            h,w=f.shape[:2]; sc=self._det_size/max(h,w)
             sm=cv2.resize(f,(int(w*sc),int(h*sc))) if sc<1 else f
             d=self.det.detect(sm)
             if sc<1:
@@ -648,6 +658,28 @@ class DetectionPipeline:
         r["hv"]=any(d["is_violation"] for d in r["dets"])
         r["vd"]=[f"{d['class_name']} ({d['confidence']:.0%})"
                  for d in r["dets"] if d["is_violation"]]
+        # Ausência de EPI obrigatório (modelo só-positivos): EPI exigido que não
+        # aparece -> violação. Escopo definido pelos toggles ativos.
+        _EPI_PT={"Hardhat":"Capacete","Mask":"Mascara","Safety Vest":"Colete",
+                 "Safety Glasses":"Oculos","Ear Protection":"Prot.Auricular",
+                 "Safety Boots":"Bota"}
+        people=r.get("people",[])
+        frame_missing=set()
+        if people:
+            # MULTI-PESSOA: cada operador é avaliado individualmente.
+            for p in people:
+                miss=PPEDetector.epis_on_person(r["dets"],p.get("bbox"),required_epis)
+                p["epi_missing"]=[_EPI_PT.get(m,m) for m in miss]
+                p["epi_ok"]=not miss
+                frame_missing.update(miss)
+        else:
+            # Sem boxes de pessoa (pose off): checagem por frame via classe Person.
+            person_present=any("person" in d["class_name"].lower() for d in r["dets"])
+            frame_missing.update(PPEDetector.missing_required(r["dets"],required_epis,
+                                                              person_present))
+        if frame_missing:
+            r["hv"]=True
+            r["vd"]=[f"{_EPI_PT.get(m,m)} AUSENTE" for m in sorted(frame_missing)]+r["vd"]
         r["fps"]=fps; return r
 
     @property
@@ -661,7 +693,8 @@ class DetectionPipeline:
 #  APP
 # ───────────────────────────────────────────────────────────
 class App:
-    def __init__(self, camera, model_path, confidence, enable_pose=True):
+    def __init__(self, camera, model_path, confidence, enable_pose=True,
+                 det_size=640):
         print("\n  Tortuga PPE Monitor  v3.2  (Fase 1 + Fase 2)")
         print("  Carregando modelos...")
         self.det=PPEDetector(model_path, confidence=confidence)
@@ -687,7 +720,8 @@ class App:
         self.sb.has_glasses =any("glass" in n.lower()
                                  for n in self.det._class_names.values())
         self.sb.pose_enabled=(self._pose_est is not None)
-        self.pipe=DetectionPipeline(camera,self.det,self._pose_est)
+        self.pipe=DetectionPipeline(camera,self.det,self._pose_est,
+                                    det_size=det_size)
         self._fn=0
 
     def _mouse(self,event,mx,my,flags,_):
@@ -802,11 +836,16 @@ def main():
     p.add_argument("--model",
                    default=os.path.join(os.path.dirname(__file__),"models","best.pt"))
     p.add_argument("--confidence", type=float, default=0.4)
+    p.add_argument("--det-size",   type=int,   default=640,
+                   help="Resolucao de inferencia EPI (640=treino; 960 detecta "
+                        "EPIs menores; reduza p/ 480 se faltar FPS)")
     p.add_argument("--no-pose",    action="store_true",
                    help="Desabilita Fase 2 (Pose Estimation)")
     a=p.parse_args()
     cam=int(a.camera) if str(a.camera).isdigit() else a.camera
-    App(cam, a.model, a.confidence, enable_pose=not a.no_pose).run()
+    App(cam, a.model, a.confidence, enable_pose=not a.no_pose,
+        det_size=a.det_size).run()
 
 if __name__=="__main__":
     main()
+# fim gui.py

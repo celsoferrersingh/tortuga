@@ -1197,6 +1197,21 @@ def render_pose_overlay(frame: np.ndarray, people: list[dict],
             cv2.putText(frame, "FAD", (x1 + int(30*S), y2 - int(4*S)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.35*S, (20,100,248), 1, cv2.LINE_AA)
 
+        # Conformidade de EPI por pessoa (multi-pessoa) — caixa vermelha + "SEM: ..."
+        epi_missing = person.get("epi_missing")
+        if person.get("bbox") and epi_missing:
+            x1, y1, x2, y2 = person["bbox"]
+            red = (48, 55, 225)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), red, max(2, int(2 * S)), cv2.LINE_AA)
+            tag = "SEM: " + ", ".join(epi_missing)
+            sz = 0.5 * S
+            (tw, th), _ = cv2.getTextSize(tag, cv2.FONT_HERSHEY_SIMPLEX, sz, 1)
+            ty = min(y2 + int(20 * S), frame.shape[0] - int(4 * S))
+            cv2.rectangle(frame, (x1, ty - th - int(6 * S)),
+                          (x1 + tw + int(8 * S), ty + int(4 * S)), red, -1)
+            cv2.putText(frame, tag, (x1 + int(4 * S), ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, sz, (255, 255, 255), 1, cv2.LINE_AA)
+
     return frame
 
 

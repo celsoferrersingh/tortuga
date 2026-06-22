@@ -21,7 +21,7 @@ build/
 
 # Dataset de treino (pesado)
 server/data/
+server/datasets/
 server/runs/
-server/runs/
-server/data/
+server/runs_oculos/
 # *.pt  — permitido em server/models/ via regras acima
