@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tortuga · Dashboard SSMA</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('tortuga-theme')||'light';}catch(e){}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+ --blue:#0071E3; --blue2:#2997FF; --link:#0066CC;
+ --bg:#F5F5F7; --surface:#FFFFFF; --border:#D2D2D7; --line:var(--line);
+ --text:#1D1D1F; --text2:#6E6E73; --muted:#999999;
+ --red:#FF3B30; --amber:#FF9500; --green:#34C759;
+ --method-bg:#F0F7FF; --method-border:#D6E9FF; --scroll:var(--scroll);
+ --radius:5px; --radius-lg:14px;
+ --hsans:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
+ --bsans:'SF Pro Text',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
+}
+html[data-theme="dark"]{
+ --bg:#000000; --surface:#1C1C1E; --border:#2C2C2E; --line:#2C2C2E;
+ --text:#F5F5F7; --text2:#AEAEB2; --muted:#8E8E93; --link:#2997FF;
+ --method-bg:#0E2236; --method-border:#10385C; --scroll:#48484A;
+}
+html{transition:background .25s ease}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--bsans);font-size:15px;-webkit-font-smoothing:antialiased}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 32px;
+ display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+.brand{font-family:var(--hsans);font-size:24px;font-weight:600;color:var(--blue);letter-spacing:-.02em}
+.brand small{display:block;font-size:13px;font-weight:400;color:var(--text2);letter-spacing:0}
+nav a{color:var(--link);text-decoration:none;margin-left:20px;font-size:14px;font-weight:500}
+.upd{font-size:12px;color:var(--muted)}
+.wrap{padding:28px 32px;max-width:1280px;margin:0 auto}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+.kpi b{display:block;font-family:var(--hsans);font-size:30px;font-weight:600;line-height:1.15;letter-spacing:-.02em}
+.kpi span{font-size:13px;color:var(--text2)}
+.kpi .cap{font-size:11px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:20px}
+.card h2{font-family:var(--hsans);font-size:19px;font-weight:600;letter-spacing:-.01em;margin-bottom:3px;color:#1D1D1F}
+.card .sub{font-size:13px;color:var(--text2);margin-bottom:18px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:600}
+.b-alto{background:rgba(255,59,48,.12);color:#C81E14}
+.b-medio{background:rgba(255,149,0,.14);color:#B26B00}
+.b-baixo{background:rgba(52,199,89,.14);color:#1E8E3E}
+.sig{color:var(--red);font-weight:700}
+.pbar{height:7px;background:var(--line);border-radius:20px;overflow:hidden;min-width:72px}
+.pbar>i{display:block;height:100%;border-radius:20px}
+.muted{color:var(--muted)} .small{font-size:12px}
+.feed{max-height:300px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}
+.feed::-webkit-scrollbar{width:8px}
+.feed::-webkit-scrollbar-track{background:transparent}
+.feed::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:8px;border:2px solid var(--surface)}
+.feed::-webkit-scrollbar-thumb:hover{background:#AEAEB2}
+.ev{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
+.ev:last-child{border-bottom:none}
+.dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:0 0 auto}
+.method{font-size:13px;color:var(--text2);line-height:1.6;background:var(--method-bg);border:1px solid var(--method-border);
+ border-radius:var(--radius);padding:14px 16px}
+.method code{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--blue2);background:var(--surface);
+ border:1px solid var(--method-border);padding:1px 6px;border-radius:4px;font-size:12px}
+.method b{color:var(--text)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+footer{padding:18px 32px;color:var(--muted);font-size:12px;text-align:center;border-top:1px solid var(--border)}
+canvas{max-height:230px}
+/* botão de tema */
+.themebtn{background:var(--surface);border:1px solid var(--border);color:var(--text);
+ border-radius:var(--radius);padding:7px 12px;font-size:13px;font-weight:500;cursor:pointer;
+ margin-left:20px;font-family:var(--bsans);line-height:1}
+.themebtn:hover{border-color:var(--blue)}
+/* sugestão da IA */
+.ai-tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+ letter-spacing:.04em;text-transform:uppercase;color:var(--blue);
+ background:rgba(0,113,227,.10);border-radius:20px;padding:3px 9px}
+.areasel{background:var(--surface);color:var(--text);border:1px solid var(--border);
+ border-radius:var(--radius);padding:6px 8px;font-size:12.5px;font-family:var(--bsans)}
+.eff{font-size:11px;color:var(--muted);margin-top:3px}
+/* gamificação */
+.lead-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.lead-row:last-child{border-bottom:none}
+.medal{flex:0 0 30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+ font-weight:700;font-size:13px;font-family:var(--hsans);background:var(--line);color:var(--text2)}
+.medal.g1{background:linear-gradient(135deg,#FFD75E,#E8A800);color:#5a3d00}
+.medal.g2{background:linear-gradient(135deg,#E3E3E8,#B9BCC4);color:#33363c}
+.medal.g3{background:linear-gradient(135deg,#F0B27A,#C57B45);color:#4a2a10}
+.lead-main{flex:1;min-width:0}
+.lead-name{font-weight:600;font-size:14px}
+.lead-sub{font-size:12px;color:var(--text2)}
+.badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+.bdg{font-size:10.5px;font-weight:600;color:#1E8E3E;background:rgba(52,199,89,.14);
+ border-radius:20px;padding:2px 8px}
+.pts{font-family:var(--hsans);font-weight:700;font-size:18px;color:var(--blue);text-align:right;flex:0 0 auto}
+.pts small{display:block;font-family:var(--bsans);font-weight:400;font-size:10px;color:var(--muted)}
+/* coaching educativo */
+.coach{border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:var(--radius);
+ padding:12px 14px;margin-bottom:10px;background:var(--bg)}
+.coach:last-child{margin-bottom:0}
+.coach .who{font-weight:600;font-size:13.5px}
+.coach .focus{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--amber);margin:2px 0 5px}
+.coach .tip{font-size:13px;color:var(--text2);line-height:1.5}
+.streakkpi{display:flex;align-items:baseline;gap:8px;margin-bottom:14px}
+.streakkpi b{font-family:var(--hsans);font-size:28px;font-weight:700;color:var(--green)}
+.streakkpi span{font-size:13px;color:var(--text2)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Tortuga <small>Dashboard SSMA · análise preditiva de risco</small></div>
+  <nav>
+    <a href="/" style="color:var(--text)">Dashboard</a>
+    <a href="/config">Configuração</a>
+    <span class="upd">atualizado <span id="upd">—</span></span>
+    <button class="themebtn" id="theme" title="Alternar modo claro/escuro (3 turnos)">🌙 Escuro</button>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Risco preditivo por operador</h2>
+        <div class="sub">Probabilidade de incidente no próximo turno — para ação pedagógica preventiva. λ₀ do grupo: <b id="lam0">—</b> ev/turno</div>
+        <table>
+          <thead><tr>
+            <th>Operador</th><th>Área · Turno</th><th class="num">Ev.</th>
+            <th class="num">λ̂</th><th>P(próx. turno)</th><th class="num">IC 95%</th>
+            <th class="num">p-valor</th><th>Nível</th><th>Ação sugerida</th>
+          </tr></thead>
+          <tbody id="risk"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Severidade</h2>
+        <div class="sub">Distribuição dos eventos por nível</div>
+        <canvas id="sevChart"></canvas>
+      </div>
+      <div class="card">
+        <h2>Como prevemos</h2>
+        <p class="method">Modelamos cada operador como um processo de <b>Poisson</b> (λ̂ = eventos / turnos). A probabilidade de incidente no próximo turno é <code>P = 1 − e^(−λ̂)</code>. O intervalo vem do <b>Teorema do Limite Central</b>, e um <b>teste de hipóteses</b> (Poisson exato) valida quem está acima da base com p &lt; 0,05 — sinal, não ruído. Identidade anonimizada (LGPD).</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Risco por área <span class="ai-tag">✨ Sugestão da IA</span></h2>
+    <div class="sub">O modelo agrega os eventos por área (Poisson + teste de hipóteses) e <b>sugere</b> o nível de risco. A classificação final é do gestor — aceite a sugestão ou ajuste manualmente.</div>
+    <table>
+      <thead><tr>
+        <th>Área</th><th class="num">Operadores</th><th class="num">Eventos</th>
+        <th class="num">λ̂</th><th class="num">vs base</th><th>Sugestão da IA</th><th>Classificação do gestor</th>
+      </tr></thead>
+      <tbody id="arearisk"></tbody>
+    </table>
+  </div>
+
+  <div class="row2">
+    <div class="card">
+      <h2>Ocorrências por dia</h2><div class="sub">Tendência recente</div>
+      <canvas id="tsChart"></canvas>
+    </div>
+    <div class="card">
+      <h2>Por tipo de evento</h2><div class="sub">Onde o risco se concentra</div>
+      <canvas id="typeChart"></canvas>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="card">
+      <h2>Reconhecimento &amp; engajamento</h2>
+      <div class="sub">Gamificação positiva: o placar premia conformidade e sequências limpas — celebra o acerto, não pune o erro.</div>
+      <div class="streakkpi"><b id="streak">—</b><span>dias sem ocorrência crítica no time</span></div>
+      <div id="leaderboard"></div>
+    </div>
+    <div class="card">
+      <h2>Feedback educativo personalizado</h2>
+      <div class="sub">Para cada operador, a microorientação ancorada na NR do seu ponto fraco dominante — o "treino dirigido" que o motor preditivo recomenda.</div>
+      <div id="coaching"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Ocorrências recentes</h2><div class="sub">Fluxo de eventos detectados</div>
+    <div class="feed" id="feed"></div>
+  </div>
+</div>
+<footer>Projeto Tortuga · PPE Safety Monitor · Fase 3 · Poisson · TLC · Teste de Hipóteses · LGPD-aware</footer>
+
+<script>
+const SEVC={critica:'#FF3B30',alta:'#FF9500',informativa:'#0071E3'};
+const fmt=n=>Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2});
+let sevChart,tsChart,typeChart;
+const levelClass=l=>l==='Alto'?'b-alto':l==='Médio'?'b-medio':'b-baixo';
+const pColor=l=>l==='Alto'?'#FF3B30':l==='Médio'?'#FF9500':'#34C759';
+
+async function load(){
+  const [risk,stats,ts,events,area,eng]=await Promise.all(
+    ['/api/risk','/api/stats','/api/timeseries','/api/events','/api/area-risk','/api/engagement'].map(u=>fetch(u).then(r=>r.json())));
+  document.getElementById('kpis').innerHTML=[
+    ['Conformidade',stats.conformity+'%','#34C759','turnos sem evento'],
+    ['Eventos',stats.total,'#0071E3','no período'],
+    ['Operadores em risco',risk.n_significant,'#FF3B30','significativos (p<0,05)'],
+    ['Eventos críticos',stats.criticas,'#FF9500','severidade crítica'],
+  ].map(k=>`<div class="kpi"><b style="color:${k[2]}">${k[1]}</b><span>${k[0]}<br><span class="cap">${k[3]}</span></span></div>`).join('');
+
+  document.getElementById('lam0').textContent=fmt(risk.lambda0);
+  document.getElementById('risk').innerHTML=risk.workers.map(w=>{
+    const pct=Math.round(w.p_next_shift*100);
+    return `<tr><td><b>${w.worker_id}</b></td><td class="muted small">${w.area} · ${w.turno}</td>
+      <td class="num">${w.events}</td><td class="num">${fmt(w.lambda_hat)}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div class="pbar"><i style="width:${pct}%;background:${pColor(w.risk_level)}"></i></div><span style="color:${pColor(w.risk_level)};font-weight:600">${pct}%</span></div></td>
+      <td class="num muted small">${fmt(w.ci_low)}–${fmt(w.ci_high)}</td>
+      <td class="num ${w.significant?'sig':''}">${w.p_value_exact.toFixed(3)}${w.significant?' *':''}</td>
+      <td><span class="badge ${levelClass(w.risk_level)}">${w.risk_level}</span></td>
+      <td class="muted small">${w.recommendation}</td></tr>`;}).join('');
+
+  const sl=Object.keys(stats.by_severity);
+  drawDoughnut('sevChart',sl.map(s=>(stats.severity_meta[s]||{}).label||s),sl.map(s=>stats.by_severity[s]),sl.map(s=>SEVC[s]||'#888'));
+  drawLine('tsChart',ts.map(d=>d.date.slice(5)),ts.map(d=>d.count));
+  const te=Object.entries(stats.by_type).sort((a,b)=>b[1]-a[1]);
+  drawBar('typeChart',te.map(e=>e[0]),te.map(e=>e[1]));
+
+  // risco por área — sugestão da IA + classificação do gestor
+  document.getElementById('arearisk').innerHTML=area.areas.map(a=>{
+    const opts=['','Alto','Médio','Baixo'].map(v=>`<option value="${v}" ${(a.manual_level||'')===v?'selected':''}>${v===''?'Usar sugestão da IA':v}</option>`).join('');
+    const eff=a.manual_level?`Definido pelo gestor: <b>${a.effective_level}</b>`:`Usando a sugestão: <b>${a.suggested_level}</b>`;
+    return `<tr><td><b>${a.area}</b></td><td class="num">${a.n_workers}</td><td class="num">${a.events}</td>
+      <td class="num">${fmt(a.lambda_hat)}</td><td class="num muted small">${fmt(a.ratio)}×${a.significant?' *':''}</td>
+      <td><span class="badge ${levelClass(a.suggested_level)}">${a.suggested_level}</span></td>
+      <td><select class="areasel" onchange="setArea('${a.area}',this.value)">${opts}</select><div class="eff">${eff}</div></td></tr>`;
+  }).join('');
+
+  // gamificação positiva
+  document.getElementById('streak').textContent=eng.team.streak_critical_days==null?'—':eng.team.streak_critical_days;
+  document.getElementById('leaderboard').innerHTML=eng.leaderboard.slice(0,6).map((w,i)=>{
+    const m=i<3?`g${i+1}`:'';
+    const streak=w.streak_days==null?'sem registro':`${w.streak_days}d sem evento`;
+    const badges=w.badges.map(b=>`<span class="bdg">${b}</span>`).join('');
+    return `<div class="lead-row"><div class="medal ${m}">${i+1}</div>
+      <div class="lead-main"><div class="lead-name">${w.worker_id} · ${w.name}</div>
+        <div class="lead-sub">${w.area} · conformidade ${w.conformity}% · ${streak}</div>
+        <div class="badges">${badges}</div></div>
+      <div class="pts">${w.points}<small>pontos</small></div></div>`;
+  }).join('');
+
+  // feedback educativo personalizado
+  const co=eng.coaching.slice(0,5);
+  document.getElementById('coaching').innerHTML=co.length?co.map(c=>
+    `<div class="coach"><div class="who">${c.worker_id} · ${c.name} <span class="muted small">(${c.area})</span></div>
+     <div class="focus">${c.focus}</div><div class="tip">${c.tip}</div></div>`).join('')
+    :'<div class="muted small">Sem pontos de atenção no período — time em conformidade. 👏</div>';
+
+  document.getElementById('feed').innerHTML=events.map(e=>{
+    const c=SEVC[e.severity]||'#888';const t=e.timestamp.replace('T',' ').slice(0,16);
+    const label=e.epi?`${e.type} (${e.epi})`:e.type;
+    return `<div class="ev"><span class="dot" style="background:${c}"></span><div><div><b>${e.worker_id}</b> <span class="muted">· ${label}</span></div><div class="small muted">${e.area||''} · ${t} · <span style="color:${c}">${e.severity}</span></div></div></div>`;
+  }).join('');
+  document.getElementById('upd').textContent=new Date().toLocaleTimeString('pt-BR');
+}
+async function setArea(area,level){
+  await fetch('/api/area-risk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({area,level})});
+  load();
+}
+function tc(){const d=document.documentElement.dataset.theme==='dark';
+  return {grid:d?'#2C2C2E':'#EDEDF0',tick:d?'#AEAEB2':'#6E6E73',surface:d?'#1C1C1E':'#FFFFFF'};}
+function baseOpts(){const t=tc();return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+  scales:{x:{ticks:{color:t.tick,font:{size:10}},grid:{color:t.grid}},
+          y:{ticks:{color:t.tick,font:{size:10}},grid:{color:t.grid},beginAtZero:true}}};}
+function drawDoughnut(id,labels,data,colors){if(sevChart)sevChart.destroy();const t=tc();
+  sevChart=new Chart(document.getElementById(id),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors,borderColor:t.surface,borderWidth:3}]},
+  options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{color:t.tick,font:{size:12},padding:12}}}}});}
+function drawLine(id,labels,data){if(tsChart)tsChart.destroy();
+  tsChart=new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:[{data,borderColor:'#0071E3',backgroundColor:'rgba(0,113,227,.10)',fill:true,tension:.3,pointRadius:2}]},options:baseOpts()});}
+function drawBar(id,labels,data){if(typeChart)typeChart.destroy();
+  typeChart=new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:[{data,backgroundColor:'#0071E3',borderRadius:5}]},options:baseOpts()});}
+
+// modo claro/escuro (3 turnos) — persistido no navegador do gestor
+const themeBtn=document.getElementById('theme');
+function applyTheme(t){document.documentElement.dataset.theme=t;themeBtn.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
+applyTheme(localStorage.getItem('tortuga-theme')||'light');
+themeBtn.onclick=()=>{const cur=document.documentElement.dataset.theme==='dark'?'light':'dark';
+  localStorage.setItem('tortuga-theme',cur);applyTheme(cur);load();};
+
+load();setInterval(load,15000);
+</script>
+</body>
+</html>

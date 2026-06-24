@@ -5,7 +5,7 @@ Uso  : python gui.py [--camera 0] [--confidence 0.4] [--no-pose]
 Teclas: ESPACO pausa  |  Q / ESC sai  |  P toggle pose  |  S session report
 """
 from __future__ import annotations
-import argparse, os, sys, threading, time, math, queue
+import argparse, json, os, sys, threading, time, math, queue
 import cv2, numpy as np
 
 os.environ["YOLO_OFFLINE"]        = "1"
@@ -71,7 +71,7 @@ WHITE   = (255, 255, 255)
 TEXT    = (225, 228, 238)
 MUTED   = ( 95, 102, 120)
 MUTED2  = (140, 148, 168)
-ACCENT  = ( 28, 138, 255)
+ACCENT  = (227, 113,   0)   # #0071E3 — identidade nova (azul)
 GREEN   = ( 48, 195,  68)
 RED     = ( 48,  55, 225)
 AMBER   = ( 20, 160, 248)
@@ -189,7 +189,9 @@ def det_label(img,x1,y1,x2,y2,name,conf,color):
 class Sidebar:
     def __init__(self, width:int, height:int):
         self.W = width; self.H = height
-        self.SC = width / 300.0
+        # Escala limitada pela ALTURA também: evita que o conteúdo (6 EPIs +
+        # pose + sensibilidade + rodapé) estoure o painel e sobreponha o rodapé.
+        self.SC = min(width / 300.0, height / 1040.0)
         self.states      = {e:True for e in EPI_LIST}
         self.confidence  = 0.4
         self.has_glasses = False
@@ -591,6 +593,9 @@ class DetectionPipeline:
         self._pose_q:queue.Queue = queue.Queue(maxsize=2)
         self._result = {"frame":None,"dets":[],"hv":False,"vd":[],
                         "people":[],"pose_risk":False,"pose_details":[]}
+        # Frame AO VIVO (atualizado pela captura) — desacopla o vídeo da
+        # velocidade da detecção: o vídeo fica fluido e só as caixas "atrasam".
+        self._live=None
         self._rlock  = threading.Lock()
         self._ft:list[float]=[]; self._flock=threading.Lock()
         threading.Thread(target=self._capture,    daemon=True,name="cap").start()
@@ -605,6 +610,7 @@ class DetectionPipeline:
             if self._pause: time.sleep(0.02); continue
             ok,f=cap.read()
             if not ok: time.sleep(0.02); continue
+            self._live=f                       # vídeo ao vivo (independe da detecção)
             now=time.time()
             with self._flock:
                 self._ft.append(now)
@@ -654,6 +660,8 @@ class DetectionPipeline:
     def get(self, required_epis):
         with self._flock: fps=len(self._ft)
         with self._rlock: r=dict(self._result)
+        if self._live is not None:            # mostra o frame ao vivo, não o detectado
+            r["frame"]=self._live
         r["dets"]=PPEDetector.filter_by_station(r["dets"],required_epis)
         r["hv"]=any(d["is_violation"] for d in r["dets"])
         r["vd"]=[f"{d['class_name']} ({d['confidence']:.0%})"
@@ -694,10 +702,13 @@ class DetectionPipeline:
 # ───────────────────────────────────────────────────────────
 class App:
     def __init__(self, camera, model_path, confidence, enable_pose=True,
-                 det_size=640):
+                 det_size=640, dashboard_url=None, station_id=None, ingest=False,
+                 device=None, preprocess=False, fusion=False, camera_id=None):
+        self._fusion = bool(fusion)
         print("\n  Tortuga PPE Monitor  v3.2  (Fase 1 + Fase 2)")
         print("  Carregando modelos...")
-        self.det=PPEDetector(model_path, confidence=confidence)
+        self.det=PPEDetector(model_path, confidence=confidence,
+                             device=device, preprocess=preprocess)
 
         self._pose_est=None
         if enable_pose and _POSE_AVAILABLE:
@@ -723,6 +734,27 @@ class App:
         self.pipe=DetectionPipeline(camera,self.det,self._pose_est,
                                     det_size=det_size)
         self._fn=0
+
+        # ── Fase 3: integração com o dashboard (perfil ativo + zonas + ingestão) ──
+        self._dash=None; self._zones=[]; self._last_ingest_ts=0.0
+        if ingest and dashboard_url and station_id:
+            try:
+                from dashboard_client import DashboardClient
+                self._dash=DashboardClient(dashboard_url, station_id=station_id, camera_id=camera_id)
+                prof=self._dash.active_profile()
+                if prof:
+                    # aplica os EPIs e a confiança do PERFIL ativo (definido pelo QR)
+                    for e in list(self.sb.states):
+                        self.sb.states[e]=(e in prof.get("required_epis", []))
+                    cf=float(prof.get("confidence", confidence))
+                    self.det.confidence=self.sb.confidence=cf
+                    print(f"  Perfil ativo na {station_id}: {prof['worker_id']} | "
+                          f"EPIs={prof.get('required_epis')} | conf={cf}")
+                self._zones=self._dash.zones()
+                if self._zones:
+                    print(f"  {len(self._zones)} zona(s) de risco carregada(s) do dashboard")
+            except Exception as e:
+                print(f"  [aviso] dashboard indisponivel ({e}); seguindo sem ingestão")
 
     def _mouse(self,event,mx,my,flags,_):
         sx=mx-self._cw
@@ -751,6 +783,50 @@ class App:
             print(f"    Frames risco:  {s['frames_high']}")
             print(f"    Acao recomend: {s['action']}")
         print("="*55+"\n")
+
+    def _scaled_zones(self, frame):
+        """Converte zonas relativas (0..1) em polígonos de pixel do frame atual."""
+        if not self._zones or frame is None:
+            return []
+        h, w = frame.shape[:2]; out = []
+        for z in self._zones:
+            pts = z.get("points", [])
+            if len(pts) >= 3:
+                out.append([[int(x * w), int(y * h)] for x, y in pts])
+        return out
+
+    def _observe_frame(self, r):
+        """Fusão multi-câmera: reporta os EPIs que ESTA câmera vê (o servidor funde)."""
+        try:
+            required=self.sb.required(); dets=r["dets"]; people=r.get("people",[])
+            missing=set()
+            if people:
+                for p in people:
+                    missing|=set(PPEDetector.epis_on_person(dets,p.get("bbox"),required))
+                person=True
+            else:
+                person=any("person" in d["class_name"].lower() for d in dets)
+                missing|=set(PPEDetector.missing_required(dets,required,person))
+            present=[e for e in required if e not in missing]
+            if self._dash.observe(present=present, person=person):
+                self._last_ingest_ts=time.time()
+        except Exception:
+            pass
+
+    def _ingest_events(self, vd, people):
+        """Envia ao dashboard os eventos reais detectados (o client faz throttle)."""
+        try:
+            sent=False
+            for v in vd:
+                if "AUSENTE" in v:
+                    sent|=bool(self._dash.ingest("EPI_AUSENTE", epi=v.split(" AUSENTE")[0].strip()))
+            for p in (people or []):
+                if p.get("is_immediate"):   sent|=bool(self._dash.ingest("QUEDA"))
+                elif p.get("is_zone"):      sent|=bool(self._dash.ingest("ZONA_CRITICA"))
+                elif p.get("is_ergonomic"): sent|=bool(self._dash.ingest("POSTURA_RISCO"))
+            if sent: self._last_ingest_ts=time.time()
+        except Exception:
+            pass
 
     def run(self):
         win="Tortuga - PPE Monitor"
@@ -802,8 +878,15 @@ class App:
             else:
                 self.sb.update_pose(POSTURE_SAFE,[],0)
 
+            # Zonas de risco configuradas no dashboard (relativas 0..1 -> pixels)
             if self._pose_est:
-                self._pose_est.set_danger_zones([])
+                self._pose_est.set_danger_zones(self._scaled_zones(f))
+            # Ingestão de eventos REAIS no dashboard (atribuídos ao operador ativo)
+            if self._dash is not None:
+                if self._fusion:
+                    self._observe_frame(r)          # multi-câmera: reporta presença
+                elif hv or pose_risk:
+                    self._ingest_events(vd, people)
 
             cam=render_cam(
                 f if f is not None else ph,
@@ -813,6 +896,13 @@ class App:
                 pose_enabled=self.sb.pose_enabled,
                 danger_zones=self._pose_est.danger_zones if self._pose_est else [],
             )
+            # Selo "ENVIADO AO DASHBOARD" — pisca ~1,6s a cada ingestão real (Fase 3)
+            if self._dash is not None and time.time()-self._last_ingest_ts < 1.6:
+                S=self._ch/480.0
+                bw=int(210*S); bh=int(32*S); bx=self._cw-bw-int(16*S); by=int(66*S)
+                rrect(cam,bx,by,bx+bw,by+bh,int(7*S),ACCENT)
+                cv2.circle(cam,(bx+int(15*S),by+bh//2),int(4*S),WHITE,-1)
+                T(cam,"ENVIADO AO DASHBOARD",bx+int(26*S),by+int(7*S),sz=0.40*S,color=WHITE,bold=True)
             side=self.sb.render(fps,hv,vd,self._fn)
             cv2.imshow(win,np.hstack([cam,side]))
 
@@ -841,10 +931,33 @@ def main():
                         "EPIs menores; reduza p/ 480 se faltar FPS)")
     p.add_argument("--no-pose",    action="store_true",
                    help="Desabilita Fase 2 (Pose Estimation)")
+    p.add_argument("--dashboard",  default="http://localhost:5005",
+                   help="URL do dashboard p/ ingestao de eventos reais (Fase 3)")
+    p.add_argument("--station-id", default=None,
+                   help="ID da estacao (ex.: EST-PRE) p/ atribuir ao operador ativo")
+    p.add_argument("--ingest",     action="store_true",
+                   help="Enviar eventos reais ao dashboard e aplicar perfil/zonas")
+    p.add_argument("--device",     default=None, choices=[None,"auto","cuda","mps","cpu"],
+                   help="Device de inferencia (auto detecta CUDA/Metal/CPU). Fase 4: hardware generico")
+    p.add_argument("--preprocess", action="store_true",
+                   help="Robustez a iluminacao adversa (CLAHE + gama automatica) antes da inferencia")
+    p.add_argument("--preprocess-opts", default=None,
+                   help="JSON com opcoes de pre-processamento por camera (ex.: '{\"adaptive\":true,\"clip\":4}')")
+    p.add_argument("--fusion", action="store_true",
+                   help="Fusao multi-camera: reporta presenca; o servidor funde varios angulos da estacao")
+    p.add_argument("--camera-id", default=None, help="ID unico desta camera (p/ fusao na mesma estacao)")
     a=p.parse_args()
     cam=int(a.camera) if str(a.camera).isdigit() else a.camera
+    if a.preprocess_opts:
+        pre = json.loads(a.preprocess_opts)
+    elif a.preprocess:
+        pre = {"adaptive": True}
+    else:
+        pre = False
     App(cam, a.model, a.confidence, enable_pose=not a.no_pose,
-        det_size=a.det_size).run()
+        det_size=a.det_size, dashboard_url=a.dashboard,
+        station_id=a.station_id, ingest=(a.ingest or a.fusion),
+        device=a.device, preprocess=pre, fusion=a.fusion, camera_id=a.camera_id).run()
 
 if __name__=="__main__":
     main()

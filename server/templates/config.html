@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tortuga · Configuração SSMA</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('tortuga-theme')||'light';}catch(e){}</script>
+<style>
+:root{
+ --blue:#0071E3; --blue2:#2997FF; --link:#0066CC;
+ --bg:#F5F5F7; --surface:#FFFFFF; --border:#D2D2D7; --line:#EDEDF0;
+ --text:#1D1D1F; --text2:#6E6E73; --muted:#999999;
+ --red:#FF3B30; --amber:#FF9500; --green:#34C759; --radius:5px; --radius-lg:14px;
+ --hsans:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
+ --bsans:'SF Pro Text',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
+}
+html[data-theme="dark"]{
+ --bg:#000000; --surface:#1C1C1E; --border:#2C2C2E; --line:#2C2C2E;
+ --text:#F5F5F7; --text2:#AEAEB2; --muted:#8E8E93; --link:#2997FF;
+}
+html{transition:background .25s ease}
+.themebtn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 11px;font-size:13px;font-weight:500;cursor:pointer;margin-left:18px;font-family:var(--bsans);line-height:1}
+.themebtn:hover{border-color:var(--blue)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--bsans);font-size:14px;-webkit-font-smoothing:antialiased}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 28px;display:flex;align-items:center;justify-content:space-between}
+.brand{font-family:var(--hsans);font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-.02em}
+.brand small{display:block;font-size:12px;font-weight:400;color:var(--text2)}
+nav a{color:var(--link);text-decoration:none;margin-left:18px;font-size:14px;font-weight:500}
+nav a.on{color:var(--text)}
+.wrap{padding:24px 28px;max-width:1160px;margin:0 auto}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:20px}
+.card h2{font-family:var(--hsans);font-size:18px;font-weight:600;margin-bottom:3px;letter-spacing:-.01em}
+.card .sub{font-size:12.5px;color:var(--text2);margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+tr:last-child td{border-bottom:none}
+.epi{display:inline-flex;align-items:center;gap:4px;margin:2px 9px 2px 0;font-size:12.5px;color:var(--text2)}
+.epi input{accent-color:var(--blue)}
+input[type=range]{vertical-align:middle;accent-color:var(--blue)}
+select,input[type=text]{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:7px 9px;font-size:13px;font-family:var(--bsans)}
+button{background:var(--blue);color:#fff;border:none;border-radius:var(--radius);padding:7px 15px;font-weight:600;cursor:pointer;font-size:12.5px}
+button.ghost{background:var(--surface);border:1px solid var(--border);color:var(--text2)}
+.lvl{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:600}
+.l-critica{background:rgba(255,59,48,.12);color:#C81E14}.l-alta{background:rgba(255,149,0,.14);color:#B26B00}.l-informativa{background:rgba(0,113,227,.12);color:#0058B0}
+.grid2{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}
+canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);cursor:crosshair;width:100%;display:block}
+.muted{color:var(--muted)} .small{font-size:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--green);color:#fff;padding:11px 18px;border-radius:var(--radius);font-weight:600;opacity:0;transition:.3s}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Tortuga <small>Configuração SSMA · perfis, cintos e zonas</small></div>
+  <nav><a href="/">Dashboard</a><a href="/config" class="on">Configuração</a><a href="/checkin">Check-in</a><button class="themebtn" id="theme">🌙 Escuro</button></nav>
+</header>
+<div class="wrap">
+  <div class="card">
+    <h2>Perfis de operador</h2>
+    <div class="sub">Cada perfil define os EPIs monitorados e a confiança mínima do YOLO. O QR no início do turno amarra o operador ao cinto.</div>
+    <table><thead><tr><th>ID</th><th>Área · Turno</th><th>EPIs monitorados</th><th>Confiança YOLO</th><th></th></tr></thead><tbody id="profiles"></tbody></table>
+  </div>
+  <div class="grid2">
+    <div class="card"><h2>Cintos (ESP32)</h2>
+      <div class="sub">Operador ativo agora em cada cinto (normalmente vem do check-in por QR; aqui o gestor pode sobrepor).</div>
+      <table><thead><tr><th>Cinto</th><th>Estação</th><th>Operador ativo</th></tr></thead><tbody id="belts"></tbody></table>
+    </div>
+    <div class="card"><h2>Zonas de risco</h2>
+      <div class="sub">Áreas com nível de severidade próprio, aplicadas à pose.</div>
+      <table><thead><tr><th>Nome</th><th>Nível</th><th>Estação</th><th></th></tr></thead><tbody id="zones"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Desenhar nova zona</h2>
+    <div class="sub">Clique no quadro para marcar os vértices. As coordenadas são salvas em proporção (0–1) e renderizadas sobre o vídeo real.</div>
+    <div class="grid2">
+      <canvas id="cv" width="640" height="360"></canvas>
+      <div>
+        <label class="small muted">Nome</label><br><input type="text" id="zname" placeholder="Ex.: Prensa — área da matriz" style="width:100%">
+        <div class="row"><span class="small muted">Nível:</span>
+          <select id="zlevel"><option value="critica">Crítica</option><option value="alta" selected>Alta</option><option value="informativa">Informativa</option></select>
+          <span class="small muted">Estação:</span><input type="text" id="zstation" placeholder="EST-PRE" style="width:100px"></div>
+        <div class="row" id="zepis"></div>
+        <div class="row"><button id="zsave">Salvar zona</button><button class="ghost" id="zreset">Limpar pontos</button><span class="small muted" id="zpts">0 pontos</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const EPIS=[["Hardhat","Capacete"],["Safety Vest","Colete"],["Safety Glasses","Óculos"],["Mask","Máscara"],["Ear Protection","Prot.Auricular"],["Safety Boots","Bota"]];
+const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);};
+const j=(u,m,b)=>fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(r=>r.json());
+async function loadProfiles(){
+  const ps=await j('/api/profiles');
+  document.getElementById('profiles').innerHTML=ps.map(p=>{
+    const ck=EPIS.map(([k,lbl])=>`<label class="epi"><input type="checkbox" data-w="${p.worker_id}" value="${k}" ${p.required_epis.includes(k)?'checked':''}>${lbl}</label>`).join('');
+    return `<tr><td><b>${p.worker_id}</b><div class="small muted">${p.name}</div></td>
+      <td class="small">${p.area}<div class="muted">Turno ${p.turno}</div></td><td>${ck}</td>
+      <td><input type="range" min="0.1" max="0.9" step="0.05" value="${p.confidence}" data-cw="${p.worker_id}" oninput="this.nextElementSibling.textContent=Math.round(this.value*100)+'%'"><span class="small">${Math.round(p.confidence*100)}%</span></td>
+      <td><button onclick="saveProfile('${p.worker_id}')">Salvar</button></td></tr>`;}).join('');
+}
+async function saveProfile(wid){
+  const epis=[...document.querySelectorAll(`input[data-w="${wid}"]:checked`)].map(c=>c.value);
+  const conf=parseFloat(document.querySelector(`input[data-cw="${wid}"]`).value);
+  await j('/api/profiles/'+wid,'PUT',{required_epis:epis,confidence:conf}); toast(wid+' atualizado');
+}
+async function loadBelts(){
+  const [belts,ps]=await Promise.all([j('/api/belts'),j('/api/profiles')]);
+  const opts=w=>ps.map(p=>`<option value="${p.worker_id}" ${p.worker_id===w?'selected':''}>${p.worker_id} · ${p.name}</option>`).join('');
+  document.getElementById('belts').innerHTML=belts.map(b=>`<tr><td><b>${b.device_id}</b></td><td class="small muted">${b.station_id||'—'}</td><td><select onchange="assign('${b.device_id}',this.value)">${opts(b.active_worker_id)}</select></td></tr>`).join('');
+}
+async function assign(dev,wid){await j('/api/assign','POST',{device_id:dev,worker_id:wid});toast(dev+' → '+wid);}
+async function loadZones(){
+  const zs=await j('/api/zones');
+  document.getElementById('zones').innerHTML=zs.map(z=>`<tr><td>${z.name}</td><td><span class="lvl l-${z.level}">${z.level}</span></td><td class="small muted">${z.station_id||'—'}</td><td><button class="ghost" onclick="delZone(${z.id})">remover</button></td></tr>`).join('')||'<tr><td colspan="4" class="muted small">Nenhuma zona ainda.</td></tr>';
+}
+async function delZone(id){await j('/api/zones/'+id,'DELETE');loadZones();toast('zona removida');}
+let pts=[];const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle='#E5E5EA';for(let x=0;x<cv.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke();}
+  for(let y=0;y<cv.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cv.width,y);ctx.stroke();}
+  if(pts.length){ctx.beginPath();ctx.moveTo(pts[0][0]*cv.width,pts[0][1]*cv.height);pts.forEach(p=>ctx.lineTo(p[0]*cv.width,p[1]*cv.height));if(pts.length>2)ctx.closePath();
+    ctx.fillStyle='rgba(255,59,48,.16)';ctx.fill();ctx.strokeStyle='#FF3B30';ctx.lineWidth=2;ctx.stroke();
+    pts.forEach(p=>{ctx.fillStyle='#0071E3';ctx.beginPath();ctx.arc(p[0]*cv.width,p[1]*cv.height,4,0,7);ctx.fill();});}
+  document.getElementById('zpts').textContent=pts.length+' pontos';
+}
+cv.onclick=e=>{const r=cv.getBoundingClientRect();pts.push([(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]);draw();};
+document.getElementById('zreset').onclick=()=>{pts=[];draw();};
+document.getElementById('zepis').innerHTML='<span class="small muted">EPIs extra na zona:</span>'+EPIS.map(([k,l])=>`<label class="epi"><input type="checkbox" value="${k}">${l}</label>`).join('');
+document.getElementById('zsave').onclick=async()=>{
+  if(pts.length<3){toast('marque ao menos 3 pontos');return;}
+  const name=document.getElementById('zname').value||'Zona',level=document.getElementById('zlevel').value,station=document.getElementById('zstation').value||null;
+  const epis=[...document.querySelectorAll('#zepis input:checked')].map(c=>c.value);
+  await j('/api/zones','POST',{name,level,points:pts,station_id:station,required_epis:epis});
+  pts=[];draw();document.getElementById('zname').value='';loadZones();toast('zona salva');
+};
+loadProfiles();loadBelts();loadZones();draw();
+const _tb=document.getElementById('theme');
+function _applyTheme(t){document.documentElement.dataset.theme=t;_tb.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
+_applyTheme(localStorage.getItem('tortuga-theme')||'light');
+_tb.onclick=()=>{const c=document.documentElement.dataset.theme==='dark'?'light':'dark';localStorage.setItem('tortuga-theme',c);_applyTheme(c);draw();};
+</script>
+</body>
+</html>

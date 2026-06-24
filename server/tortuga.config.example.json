@@ -1,0 +1,12 @@
+{
+  "_comment": "Configuração portátil do Tortuga (Fase 4). Copie para tortuga.config.json e ajuste por ambiente. 'source' aceita índice de webcam (0,1), arquivo de vídeo ou RTSP de câmera IP. 'device' = auto|cuda|mps|cpu. Cada câmera é um ponto de visão com seu station_id.",
+  "dashboard": "http://localhost:5005",
+  "device": "auto",
+  "model": "models/best.pt",
+  "defaults": { "det_size": 640, "confidence": 0.40, "preprocess": true, "ingest": true, "pose": true },
+  "cameras": [
+    { "station_id": "EST-PRE", "name": "Prensa — frontal",  "source": "0",                              "det_size": 960, "confidence": 0.45 },
+    { "station_id": "EST-SOL", "name": "Solda — lateral",   "source": "rtsp://usuario:senha@10.0.0.21/stream1", "confidence": 0.45, "preprocess": { "adaptive": true, "clip": 4.0 } },
+    { "station_id": "EST-PIN", "name": "Pintura — superior", "source": "rtsp://usuario:senha@10.0.0.22/stream1" }
+  ]
+}

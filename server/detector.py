@@ -67,10 +67,29 @@ COLOR_VIOLATION = (0, 0, 220)
 COLOR_NEUTRAL   = (200, 200, 0)
 
 
-def _best_device() -> str:
-    if torch.backends.mps.is_available():
+def _best_device(prefer: str | None = None) -> str:
+    """Auto-detecta o melhor device. `prefer` (ou env TORTUGA_DEVICE) força um
+    device; se indisponível, cai para o melhor disponível — nunca quebra em
+    hardware genérico sem GPU (Fase 4: rodável em múltiplos ambientes)."""
+    import os
+    prefer = (prefer or os.environ.get("TORTUGA_DEVICE") or "auto").lower()
+    try:
+        has_cuda = torch.cuda.is_available()
+    except Exception:
+        has_cuda = False
+    try:
+        has_mps = torch.backends.mps.is_available()
+    except Exception:
+        has_mps = False
+    if prefer == "cuda" and has_cuda:
+        return "cuda"
+    if prefer == "mps" and has_mps:
         return "mps"
-    if torch.cuda.is_available():
+    if prefer == "cpu":
+        return "cpu"
+    if has_mps:
+        return "mps"
+    if has_cuda:
         return "cuda"
     return "cpu"
 
@@ -158,10 +177,15 @@ class PPEDetector:
     - Senão: usa somente best.pt
     """
 
-    def __init__(self, model_path: str, confidence: float = 0.4):
+    def __init__(self, model_path: str, confidence: float = 0.4,
+                 device: str | None = None, preprocess=False):
         self._confidence = confidence
-        self.device = _best_device()
+        self.device = _best_device(device)
+        # robustez a iluminação adversa (Fase 4): False | True | dict de opções
+        self._preprocess = preprocess
         log.info("Dispositivo de inferencia: %s", self.device.upper())
+        if preprocess:
+            log.info("Pre-processamento de robustez a iluminacao: ATIVO")
 
         model_path = Path(model_path)
         old_model_path = model_path.parent / "best.old.pt"
@@ -227,10 +251,24 @@ class PPEDetector:
             w.confidence = self._confidence
 
     def detect(self, frame: np.ndarray) -> list[dict]:
-        """Roda todos os modelos e combina as detecções."""
+        """Roda todos os modelos e combina as detecções.
+
+        Se o pré-processamento de robustez estiver ativo, a INFERÊNCIA usa o
+        frame realçado (CLAHE + gama automática); as bboxes voltam no mesmo
+        grid de pixels, então o overlay segue válido sobre o frame de exibição.
+        """
+        infer = frame
+        if self._preprocess:
+            try:
+                import preprocess as _pp
+                opts = self._preprocess if isinstance(self._preprocess, dict) else {}
+                infer = _pp.enhance(frame, **opts)
+            except Exception as e:
+                log.warning("Pre-processamento falhou (%s); usando frame original", e)
+                infer = frame
         all_detections: list[dict] = []
         for w in self._wrappers:
-            all_detections.extend(w.detect(frame))
+            all_detections.extend(w.detect(infer))
         return all_detections
 
     def has_violations(self, detections: list[dict]) -> bool:

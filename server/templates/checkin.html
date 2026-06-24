@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tortuga · Check-in do cinto</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('tortuga-theme')||'light';}catch(e){}</script>
+<style>
+:root{--blue:#0071E3;--bg:#F5F5F7;--surface:#FFFFFF;--border:#D2D2D7;--text:#1D1D1F;--text2:#6E6E73;--muted:#999999;--green:#34C759;--radius:5px;
+ --belt-bg:#F0F7FF;--belt-bd:#D6E9FF;--ok-bg:#EAF8EE;--ok-bd:#B7E7C4;--ok-tx:#1E8E3E;
+ --hsans:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;--bsans:'SF Pro Text',-apple-system,'Helvetica Neue',Arial,sans-serif;}
+html[data-theme="dark"]{--bg:#000000;--surface:#1C1C1E;--border:#2C2C2E;--text:#F5F5F7;--text2:#AEAEB2;--muted:#8E8E93;
+ --belt-bg:#0E2236;--belt-bd:#10385C;--ok-bg:#0E2A16;--ok-bd:#1E5631;--ok-tx:#5BD27D;}
+html{transition:background .25s ease}
+.themebtn{position:fixed;top:14px;right:14px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:7px 11px;font-size:13px;cursor:pointer;font-family:var(--bsans);z-index:5}
+.themebtn:hover{border-color:var(--blue)}
+*{box-sizing:border-box;margin:0;padding:0;font-family:var(--bsans)}
+body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;-webkit-font-smoothing:antialiased}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:28px;width:100%;max-width:380px}
+.brand{font-family:var(--hsans);font-size:26px;font-weight:600;color:var(--blue);text-align:center;letter-spacing:-.02em}
+.brand small{display:block;font-size:13px;font-weight:400;color:var(--text2);margin-top:2px}
+h1{font-family:var(--hsans);font-size:18px;font-weight:600;margin:20px 0 4px}
+.muted{color:var(--text2);font-size:13px}
+.belt{background:var(--belt-bg);border:1px solid var(--belt-bd);border-radius:10px;padding:13px 14px;margin:14px 0;font-size:16px;font-weight:600;color:var(--blue);text-align:center;letter-spacing:.5px}
+label{display:block;font-size:13px;color:var(--text2);margin:14px 0 6px}
+select{width:100%;padding:13px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--border);font-size:16px}
+button{width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+.ok{background:var(--ok-bg);border:1px solid var(--ok-bd);color:var(--ok-tx);border-radius:10px;padding:14px;margin-top:16px;text-align:center;font-weight:600;display:none}
+.epis{font-size:12.5px;color:var(--text2);margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<button class="themebtn" id="theme">🌙 Escuro</button>
+<div class="card">
+  <div class="brand">Tortuga <small>Check-in do cinto · início de turno</small></div>
+  <h1>Cinto identificado</h1>
+  <div class="muted">Confirme que este cinto é seu para começar o turno.</div>
+  <div class="belt" id="belt">—</div>
+  <label>Quem é você?</label>
+  <select id="worker"></select>
+  <button id="go">Confirmar e iniciar turno</button>
+  <div class="ok" id="ok"></div>
+</div>
+<script>
+const qs=new URLSearchParams(location.search);
+const belt=qs.get('belt')||'CINTO-PRE-01';
+document.getElementById('belt').textContent=belt;
+async function init(){
+  const profiles=await fetch('/api/profiles').then(r=>r.json());
+  document.getElementById('worker').innerHTML=profiles.map(p=>`<option value="${p.worker_id}">${p.worker_id} · ${p.name} (${p.area}/${p.turno})</option>`).join('');
+}
+document.getElementById('go').onclick=async()=>{
+  const wid=document.getElementById('worker').value;
+  const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:belt,worker_id:wid})}).then(x=>x.json());
+  const ok=document.getElementById('ok');
+  if(r.ok){const epis=(r.profile.required_epis||[]).join(', ');ok.style.display='block';ok.innerHTML=`<b>Turno iniciado</b><br>${r.profile.name} no ${belt}<div class="epis">EPIs monitorados: ${epis}</div>`;}
+  else{ok.style.display='block';ok.style.color='#C81E14';ok.textContent='Cinto não encontrado: '+belt;}
+};
+init();
+const _tb=document.getElementById('theme');
+function _applyTheme(t){document.documentElement.dataset.theme=t;_tb.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
+_applyTheme(localStorage.getItem('tortuga-theme')||'light');
+_tb.onclick=()=>{const c=document.documentElement.dataset.theme==='dark'?'light':'dark';localStorage.setItem('tortuga-theme',c);_applyTheme(c);};
+</script>
+</body>
+</html>
