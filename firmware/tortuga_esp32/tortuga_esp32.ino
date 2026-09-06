@@ -9,7 +9,8 @@
  * OLED + LED verde/vermelho + buzzer + vibração. Tudo não-bloqueante (millis).
  * Compatível com o core esp32 2.x e 3.x (API do LEDC tratada com #if).
  *
- * Bibliotecas: "Adafruit SSD1306", "Adafruit GFX", "ArduinoJson" (6.x).
+ * Bibliotecas: "Adafruit SSD1306", "Adafruit GFX", "ArduinoJson" (6.x),
+ *              "WiFiManager" (by tzapu — instale pelo Library Manager).
  * Placa: ESP32 Dev Module.
  *
  * Ligações (mapa real do cinto):
@@ -20,15 +21,20 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <WiFiManager.h>       // portal de configuracao de WiFi (lib "WiFiManager" by tzapu)
 #include "esp_wifi.h"          // economia de energia (modem-sleep)
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// ── Wi-Fi (ATENÇÃO: nome sensível a maiúsculas — confira exatamente no iPhone) ──
-const char* WIFI_SSID = "iPhone de Celso ";
-const char* WIFI_PASS = "tortuga1234";
+// ── Wi-Fi via PORTAL (WiFiManager) ──
+// Nao ha mais SSID/senha fixos aqui. Na 1a vez (ou quando a rede salva nao for
+// encontrada, ex.: ao chegar na metaindustria) o ESP cria a rede "Tortuga-Setup".
+// Conecte o celular nela, abra o navegador, escolha a rede local e digite a senha.
+// Fica salvo na flash. Para APAGAR e reconfigurar: segure BOOT e aperte EN/RST.
+const char* AP_NAME = "Tortuga-Setup";
+const char* AP_PASS = "tortuga123";
 
 // ── Pinos (mapa REAL do cinto — confirmado pelo firmware do autor do hardware) ──
 const int PIN_LED_OK   = 19;    // LED verde
@@ -178,9 +184,26 @@ void setup() {
   oled.setCursor(0, 24); oled.setTextSize(2);
   oled.println("TORTUGA"); oled.display();
 
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("Conectando WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(400); Serial.print("."); }
+  // Portal de configuracao de WiFi (WiFiManager). Se ja houver rede salva e
+  // ela estiver ao alcance, conecta sozinho; senao, abre o portal "Tortuga-Setup".
+  pinMode(0, INPUT_PULLUP);               // botao BOOT (GPIO0)
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180);         // 3 min de portal; depois reinicia e tenta de novo
+  wm.setAPCallback([](WiFiManager*) {     // mostra as instrucoes no OLED so quando o portal abre
+    oled.clearDisplay(); oled.setTextSize(1); oled.setCursor(0, 0);
+    oled.println("Config WiFi:");
+    oled.print("rede "); oled.println(AP_NAME);
+    oled.print("senha "); oled.println(AP_PASS);
+    oled.println("abra no navegador"); oled.display();
+  });
+  if (digitalRead(0) == LOW) {            // BOOT pressionado no reset => limpar WiFi salvo
+    Serial.println("BOOT pressionado: limpando WiFi salvo.");
+    wm.resetSettings();
+  }
+  if (!wm.autoConnect(AP_NAME, AP_PASS)) {
+    Serial.println("WiFi nao configurado; reiniciando...");
+    delay(1500); ESP.restart();
+  }
   Serial.print("\nIP do ESP32: "); Serial.println(WiFi.localIP());
 
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);   // baixo consumo, mantém o push <1 s

@@ -1,0 +1,24 @@
+BACKUP DO FIRMWARE — versao com Wi-Fi FIXO
+==========================================
+
+Este e o firmware ANTERIOR do cinto, com o SSID/senha escritos direto no codigo
+(a versao que funcionou na demonstracao). Foi guardado aqui como seguranca.
+
+A versao ATUAL do projeto (firmware/tortuga_esp32/tortuga_esp32.ino) usa um
+PORTAL de configuracao (WiFiManager): o ESP cria a rede "Tortuga-Setup" e voce
+escolhe a rede pelo celular, sem recompilar.
+
+QUANDO USAR ESTE BACKUP:
+  Se por algum motivo o portal WiFiManager der problema na hora, volte para esta
+  versao (Wi-Fi fixo), que e mais simples e ja foi testada.
+
+COMO USAR:
+  1. Copie tortuga_esp32_wifi_fixo.ino para uma pasta chamada tortuga_esp32_wifi_fixo
+     (o Arduino exige que o .ino tenha o mesmo nome da pasta) e abra no Arduino IDE.
+  2. Ajuste as linhas WIFI_SSID e WIFI_PASS com a rede desejada (2,4 GHz).
+  3. Compile e faca o upload.
+  4. Abra o Serial Monitor (115200) para ler o IP e registre com set_esp.bat /
+     set_esp_metaindustria.bat.
+
+Obs.: esta versao NAO precisa da biblioteca WiFiManager; a versao atual precisa
+(instale "WiFiManager" by tzapu pelo Library Manager antes de compilar a atual).
