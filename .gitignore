@@ -6,9 +6,11 @@ venv_m4/
 venv_win/
 *.egg-info/
 
-# Modelos — best.pt e best.old.pt sao versionados explicitamente
+# Modelos: ignora TODOS os .pt (pesados) e versiona so os essenciais
+*.pt
 !server/models/best.pt
 !server/models/best.old.pt
+!server/models/best_merged12.pt
 
 # Build
 dist/
@@ -19,9 +21,13 @@ build/
 .DS_Store
 *.dmg
 
-# Dataset de treino (pesado)
+# Dataset de treino e dados pesados (nao versionar)
 server/data/
 server/datasets/
 server/runs/
 server/runs_oculos/
-# *.pt  — permitido em server/models/ via regras acima
+Fotos spi/
+_backups/
+
+# Config real com CREDENCIAIS das cameras — NAO versionar (versione so o .example)
+server/tortuga.config.json

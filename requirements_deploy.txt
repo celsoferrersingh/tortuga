@@ -1,0 +1,13 @@
+# Tortuga — dependências de runtime (metaindústria: Windows + GPU NVIDIA)
+# Forma recomendada de instalar: rode  setup_gpu.bat  (cria a venv e instala tudo).
+#
+# 1) PyTorch com CUDA 12.4 vem de um índice SEPARADO (não do PyPI):
+#      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+#
+# 2) Demais dependências (PyPI):
+ultralytics
+opencv-python
+numpy
+flask
+qrcode[pil]
+pillow-heif        # só para converter as fotos HEIC da SPI (não é usado em runtime)

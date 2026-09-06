@@ -17,9 +17,12 @@ SET VENV_DIR=%SERVER_DIR%\venv_win
 REM -- 1. Verifica Python ----------------------------------------
 python --version >nul 2>&1
 IF ERRORLEVEL 1 (
-    echo   [ERRO] Python nao encontrado.
-    echo   Instale em: https://www.python.org/downloads/
-    echo   Marque "Add Python to PATH" durante a instalacao!
+    echo   [ERRO] Python nao encontrado. Instale o Python 3.11+ primeiro:
+    echo   Opcao 1 - rapida: abra o PowerShell e rode:
+    echo       winget install -e --id Python.Python.3.12
+    echo   Opcao 2 - baixe em https://www.python.org/downloads/ e marque
+    echo            "Add Python to PATH" na instalacao.
+    echo   Depois FECHE e reabra o terminal, e rode este setup_gpu.bat de novo.
     pause & exit /b 1
 )
 echo   [OK] Python encontrado:
@@ -63,8 +66,9 @@ echo   [OK] PyTorch CUDA instalado
 echo.
 
 REM -- 6. Instala demais dependencias ----------------------------
-echo   Instalando ultralytics, opencv, numpy...
-pip install ultralytics opencv-python numpy --quiet
+echo   Instalando ultralytics, opencv, numpy, flask, qrcode, pillow-heif...
+echo   (flask + qrcode = dashboard da Fase 3; pillow-heif = converter fotos HEIC da SPI)
+pip install ultralytics opencv-python numpy flask "qrcode[pil]" pillow-heif --quiet
 IF ERRORLEVEL 1 (
     echo   [ERRO] Falha ao instalar dependencias.
     pause & exit /b 1
@@ -101,9 +105,19 @@ echo pause
 echo   [OK] run_gpu.bat criado na raiz do projeto
 echo.
 
+REM -- 10. Verificacao automatica (doctor) -----------------------
+echo   ==========================================
+echo   Rodando a verificacao final (doctor)...
+echo   ==========================================
+echo.
+cd /d "%SERVER_DIR%"
+python tortuga_doctor.py
+echo.
+
 echo   ==========================================
 echo   Setup concluido!
-echo   Proximo passo: execute run_gpu.bat
+echo   - Na metaindustria (cameras IP):  run_metaindustria.bat
+echo   - Teste com webcam local:         run_gpu.bat
 echo   ==========================================
 echo.
 pause

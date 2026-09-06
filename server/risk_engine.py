@@ -15,17 +15,23 @@ Fundamentos matemáticos
    operador i com k_i eventos em t_i turnos de exposição, a estimativa de
    máxima verossimilhança da taxa é  λ̂_i = k_i / t_i  (eventos por turno).
 
-2) Predição — probabilidade de pelo menos um evento no próximo turno:
+2) Predição — probabilidade de pelo menos um evento no próximo turno. Vem
+   DIRETO da distribuição de Poisson, sem depender do TLC:
         P(N ≥ 1) = 1 − e^(−λ̂_i)            (horizonte h turnos: 1 − e^(−λ̂_i·h))
 
-3) Teorema do Limite Central — para t_i grande, λ̂_i ≈ Normal(λ, λ/t_i).
-   Intervalo de confiança de 95%:  λ̂_i ± 1,96·√(λ̂_i / t_i).
-   Mostra a INCERTEZA: não cravamos um número, damos uma faixa.
+3) Teorema do Limite Central — usado SÓ para a incerteza, não para prever.
+   O TLC nao "converte a distribuicao dos eventos em uma normal": ele garante
+   que a SOMA de muitos turnos independentes — e, portanto, o estimador da taxa
+   λ̂_i = k_i/t_i — seja aproximadamente normal quando t_i e grande:
+        λ̂_i ≈ Normal(λ, λ/t_i).
+   Como na Poisson a variancia = media, o desvio-padrao sai direto de λ. Daí o
+   intervalo de confiança de 95%:  λ̂_i ± 1,96·√(λ̂_i / t_i)  (uma faixa, não um
+   número cravado — quanto menos dados, mais larga).
 
 4) Teste de hipóteses (validação) — H0: λ_i = λ0 (linha de base do grupo)
    vs H1: λ_i > λ0. Sob H0, k_i ~ Poisson(λ0·t_i).
-     • p-valor exato de Poisson:  P(K ≥ k_i | H0)
-     • p-valor por aproximação normal (TLC):  z = (k_i − λ0 t_i)/√(λ0 t_i)
+     • p-valor exato de Poisson (PRINCIPAL, não usa aproximação):  P(K ≥ k_i | H0)
+     • p-valor por aproximação normal do TLC (reforço):  z = (k_i − λ0 t_i)/√(λ0 t_i)
    Se p < α (0,05), o operador está significativamente acima da base.
 
 Sem dependências pesadas: apenas `math` (Poisson e Normal implementados aqui).

@@ -31,7 +31,7 @@ class EventStore:
                     required_epis TEXT NOT NULL DEFAULT '[]', confidence REAL NOT NULL DEFAULT 0.4);
                 CREATE TABLE IF NOT EXISTS belts (
                     device_id TEXT PRIMARY KEY, name TEXT NOT NULL, station_id TEXT,
-                    active_worker_id TEXT, updated_at TEXT);
+                    active_worker_id TEXT, updated_at TEXT, esp32_url TEXT);
                 CREATE TABLE IF NOT EXISTS belt_status (
                     device_id TEXT PRIMARY KEY, status TEXT, severity TEXT,
                     message TEXT, epi TEXT, updated_at TEXT);
@@ -52,6 +52,11 @@ class EventStore:
                     seq INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
                     payload TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL);
             """)
+            # migração p/ bancos já existentes: adiciona esp32_url em belts se faltar
+            try:
+                self._conn.execute("ALTER TABLE belts ADD COLUMN esp32_url TEXT")
+            except Exception:
+                pass
             self._conn.commit()
 
     # perfis
@@ -126,6 +131,19 @@ class EventStore:
             r = self._conn.execute("SELECT device_id FROM belts WHERE station_id=? LIMIT 1", (station_id,)).fetchone()
         return r["device_id"] if r else None
 
+    # URL HTTP do ESP32 do cinto (modelo PUSH: o servidor manda o alerta pro IP)
+    def set_belt_esp(self, device_id, esp32_url):
+        with self._lock:
+            self._conn.execute("UPDATE belts SET esp32_url=? WHERE device_id=?",
+                               (esp32_url, device_id)); self._conn.commit()
+
+    def esp_for_station(self, station_id):
+        with self._lock:
+            r = self._conn.execute(
+                "SELECT esp32_url FROM belts WHERE station_id=? AND esp32_url IS NOT NULL AND esp32_url<>'' LIMIT 1",
+                (station_id,)).fetchone()
+        return r["esp32_url"] if r else None
+
     # estado pendente do cinto (modelo PULL ultra-baixo-consumo: o ESP consulta)
     def set_belt_status(self, device_id, severity, message=None, epi=None):
         with self._lock:
@@ -148,6 +166,11 @@ class EventStore:
             return {"status": "CONFORME"}
         return {"status": r["status"] or "VIOLACAO", "severity": r["severity"],
                 "message": r["message"], "epi": r["epi"]}
+
+    def clear_belt_status(self, device_id):
+        """Zera o alerta do cinto (volta a CONFORME imediatamente)."""
+        with self._lock:
+            self._conn.execute("DELETE FROM belt_status WHERE device_id=?", (device_id,)); self._conn.commit()
 
     # zonas
     def add_zone(self, name, level, points, station_id=None, required_epis=None):

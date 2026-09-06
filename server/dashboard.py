@@ -8,7 +8,7 @@ USO:  pip install flask qrcode[pil]
       http://localhost:5005          (gestor)   ·   /config  ·  /checkin
 """
 from __future__ import annotations
-import argparse, os
+import argparse, json, os, threading, urllib.request
 from flask import Flask, jsonify, render_template, request, Response
 from events_store import EventStore
 from risk_engine import rank_workers, rank_areas
@@ -17,6 +17,30 @@ import engagement, audit
 from fusion import FusionCoordinator
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _push_esp(esp_url, payload):
+    """Push HTTP não-bloqueante pro cinto ESP32 (POST {esp_url}/status). À prova de falha."""
+    if not esp_url:
+        return
+    def _go():
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(esp_url.rstrip("/") + "/status", data=data,
+                                         method="POST", headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=1.0).read()
+        except Exception:
+            pass
+    threading.Thread(target=_go, daemon=True).start()
+
+
+def _esp_msg(event_type, epi):
+    """Mensagem educativa (não punitiva) para o OLED do cinto."""
+    return {"EPI_AUSENTE": (epi or "EPI") + " necessario nesta area",
+            "POSTURA_RISCO": "Postura de risco detectada",
+            "ZONA_CRITICA": "Aproximacao de zona restrita",
+            "QUEDA": "Queda detectada - verificar",
+            "FADIGA": "Sinais de fadiga - pausa"}.get(event_type, "Atencao a seguranca")
 
 
 def create_app(db_path="data/tortuga.db"):
@@ -165,8 +189,11 @@ def create_app(db_path="data/tortuga.db"):
         if sev_policy.is_field(sev) and d.get("station_id"):
             dev = store.belt_for_station(d["station_id"])
             if dev:
-                store.set_belt_status(dev, severity=sev,
-                                      message=d.get("message") or d["type"], epi=d.get("epi"))
+                msg = d.get("message") or _esp_msg(d["type"], d.get("epi"))
+                store.set_belt_status(dev, severity=sev, message=msg, epi=d.get("epi"))
+                _push_esp(store.esp_for_station(d["station_id"]),
+                          {"status": "VIOLACAO", "severity": sev, "message": msg,
+                           "epi": d.get("epi"), "worker_id": wid})
         return jsonify({"ok": True, "worker_id": wid, "severity": sev})
 
     # ── status pendente do cinto (modelo PULL ultra-baixo-consumo do ESP32) ──
@@ -176,6 +203,18 @@ def create_app(db_path="data/tortuga.db"):
         if not dev:
             return jsonify({"status": "CONFORME"})
         return jsonify(store.get_belt_status(dev))
+
+    # ── volta imediata ao verde: o campo avisa que a estação ficou CONFORME ──
+    @app.route("/api/belt-clear", methods=["POST"])
+    def api_belt_clear():
+        d = request.get_json(force=True)
+        station = d.get("station_id")
+        dev = store.belt_for_station(station) if station else None
+        if dev:
+            store.clear_belt_status(dev)
+            _push_esp(store.esp_for_station(station),
+                      {"status": "CONFORME", "severity": "ok", "message": "Tudo certo", "epi": ""})
+        return jsonify({"ok": True})
 
     # ── fusão multi-câmera: cada câmera REPORTA o que vê; o servidor decide ──
     @app.route("/api/observe", methods=["POST"])
@@ -195,7 +234,11 @@ def create_app(db_path="data/tortuga.db"):
                                 area=prof.get("area"), turno=prof.get("turno"), station_id=station)
                 dev = store.belt_for_station(station)
                 if dev and sev_policy.is_field(s):
-                    store.set_belt_status(dev, severity=s, message="EPI_AUSENTE", epi=epi)
+                    msg = _esp_msg("EPI_AUSENTE", epi)
+                    store.set_belt_status(dev, severity=s, message=msg, epi=epi)
+                    _push_esp(store.esp_for_station(station),
+                              {"status": "VIOLACAO", "severity": s, "message": msg,
+                               "epi": epi, "worker_id": wid})
                 created.append(epi)
         return jsonify({"ok": True, "worker_id": wid, "fused": fused, "events_created": created})
 

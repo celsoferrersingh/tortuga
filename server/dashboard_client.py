@@ -6,7 +6,7 @@ import json, os, threading, time, urllib.request
 
 class DashboardClient:
     def __init__(self, base_url="http://localhost:5005", station_id=None,
-                 min_interval=8.0, timeout=1.0, camera_id=None, observe_interval=1.0):
+                 min_interval=4.0, timeout=1.0, camera_id=None, observe_interval=1.0):
         self.base = base_url.rstrip("/")
         self.station_id = station_id
         self.camera_id = camera_id or f"{station_id}-{os.getpid()}"
@@ -15,6 +15,16 @@ class DashboardClient:
         self.timeout = timeout
         self._last = {}
         self._last_obs = 0.0
+        self._last_conf = 0.0
+
+    def belt_conforme(self):
+        """Avisa o dashboard que a estação voltou a CONFORME → cinto verde na hora."""
+        now = time.time()
+        if now - self._last_conf < 0.8:     # evita repetir em oscilação de quadro
+            return False
+        self._last_conf = now
+        threading.Thread(target=self._post, args=("/api/belt-clear", {"station_id": self.station_id}), daemon=True).start()
+        return True
 
     def observe(self, present, person):
         """Fusão multi-câmera: reporta o que ESTA câmera vê; o servidor decide."""

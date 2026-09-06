@@ -51,6 +51,11 @@ def main():
         try: mps = torch.backends.mps.is_available()
         except Exception: mps = False
         print(OK, "torch", _v(torch), f"| CUDA={cuda} | MPS(Metal)={mps}")
+        if cuda:
+            try:
+                print(OK, f"GPU: {torch.cuda.get_device_name(0)} | CUDA runtime {torch.version.cuda}")
+            except Exception:
+                pass
         env = (os.environ.get("TORTUGA_DEVICE") or "auto").lower()
         device = ("cuda" if (env in ("auto","cuda") and cuda)
                   else "mps" if (env in ("auto","mps") and mps)
@@ -92,28 +97,84 @@ def main():
     print((OK if os.path.exists(os.path.join(models, "best.old.pt")) else WARN),
           "models/best.old.pt", "presente (modo DUAL)" if os.path.exists(os.path.join(models, "best.old.pt")) else "ausente (modo SINGLE — ok)")
 
-    # libs do dashboard (opcionais p/ detecção, necessárias p/ Fase 3)
-    for name in ("flask", "requests"):
+    # libs do dashboard (necessárias p/ Fase 3: flask serve o painel, qrcode gera o QR do cinto)
+    for name in ("flask", "qrcode"):
         try:
-            importlib.import_module(name); print(OK, f"{name} (dashboard/ingestão)")
+            importlib.import_module(name); print(OK, f"{name} (dashboard Fase 3)")
         except Exception:
-            print(WARN, f"{name} ausente — necessário só p/ dashboard/ingestão (pip install {name})")
+            print(WARN, f"{name} ausente — necessário p/ o dashboard (pip install \"{name}[pil]\" )"
+                        if name == "qrcode" else
+                        f"{name} ausente — necessário p/ o dashboard (pip install {name})")
 
-    # câmera (opcional)
-    if a.camera is not None:
-        try:
-            import cv2
-            src = int(a.camera) if str(a.camera).isdigit() else a.camera
-            cap = cv2.VideoCapture(src)
-            ok, frame = (cap.isOpened(), None)
-            if ok: ok, frame = cap.read()
-            cap.release()
-            if ok and frame is not None:
-                print(OK, f"Câmera '{a.camera}' abriu e entregou frame {frame.shape[1]}x{frame.shape[0]}")
+    # câmera / RTSP — usa o MESMO backend do runtime (FFMPEG+TCP p/ RTSP).
+    # Se --camera não for passado, testa automaticamente a 1ª câmera de tortuga.config.json.
+    cam_to_test = a.camera
+    if cam_to_test is None:
+        cfg = os.path.join(here, "tortuga.config.json")
+        if os.path.exists(cfg):
+            try:
+                import json
+                c = json.load(open(cfg, encoding="utf-8"))
+                cams = c.get("cameras", [])
+                if cams:
+                    cam_to_test = str(cams[0].get("source"))
+                    print(OK, f"Config: testando a 1ª câmera '{cams[0].get('station_id','?')}' → {cam_to_test}")
+            except Exception as e:
+                print(WARN, "tortuga.config.json ilegível:", e)
+    if cam_to_test is not None:
+        s = str(cam_to_test)
+        is_url = "://" in s
+        if is_url and ("USUARIO" in s or "IP_DA_CAMERA" in s or "SENHA" in s):
+            print(WARN, "RTSP ainda é o placeholder — edite server/tortuga.config.json com IP/usuário/senha reais.")
+        elif is_url:
+            # RTSP: primeiro uma checagem de REDE pura (a camera responde DAQUI?).
+            # Isso evita falso positivo (ex.: OpenCV cair numa webcam local e reportar
+            # "camera OK"). So tenta abrir o stream se a porta estiver acessivel.
+            import re, socket
+            m = re.search(r"@([^/:]+):?(\d+)?", s) or re.search(r"://([^/:]+):?(\d+)?", s)
+            host = m.group(1) if m else None
+            port = int(m.group(2)) if (m and m.group(2)) else 554
+            reachable = False
+            if host:
+                try:
+                    sk = socket.create_connection((host, port), timeout=4); sk.close(); reachable = True
+                except Exception:
+                    reachable = False
+            if not reachable:
+                print(WARN, f"Câmera RTSP {host}:{port} inacessível desta rede — NORMAL fora da "
+                            f"rede da metaindústria. Rode o doctor lá para validar o stream real.")
             else:
-                print(FAIL, f"Câmera '{a.camera}' não entregou frame")
-        except Exception as e:
-            print(FAIL, f"Câmera '{a.camera}':", e)
+                try:
+                    import cv2
+                    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                                          "rtsp_transport;tcp|max_delay;500000|stimeout;5000000")
+                    cap = cv2.VideoCapture(s, cv2.CAP_FFMPEG)
+                    try: cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+                    except Exception: pass
+                    ok = cap.isOpened(); frame = None
+                    if ok: ok, frame = cap.read()
+                    cap.release()
+                    if ok and frame is not None:
+                        print(OK, f"Câmera RTSP abriu e entregou frame {frame.shape[1]}x{frame.shape[0]}")
+                    else:
+                        print(FAIL, "Câmera RTSP alcançável, mas sem frame (confira usuário/senha/caminho).")
+                except Exception as e:
+                    print(FAIL, "Câmera RTSP:", e)
+        else:
+            # indice de webcam (0,1) ou arquivo de video
+            try:
+                import cv2
+                src = int(s) if s.isdigit() else s
+                cap = cv2.VideoCapture(src)
+                ok = cap.isOpened(); frame = None
+                if ok: ok, frame = cap.read()
+                cap.release()
+                if ok and frame is not None:
+                    print(OK, f"Fonte '{s}' abriu e entregou frame {frame.shape[1]}x{frame.shape[0]}")
+                else:
+                    print(FAIL, f"Fonte '{s}' não entregou frame")
+            except Exception as e:
+                print(FAIL, f"Fonte '{s}':", e)
 
     print("=" * 60)
     if essentials_ok:

@@ -603,13 +603,41 @@ class DetectionPipeline:
         if self._pose:
             threading.Thread(target=self._detect_pose,daemon=True,name="det_pose").start()
 
+    def _open_capture(self):
+        """Abre a fonte. Para RTSP (câmera IP), usa FFMPEG com transporte TCP
+        (mais estável que UDP) e baixa latência. Para índice de webcam, abre normal."""
+        cam=self._cam
+        is_url=isinstance(cam,str) and "://" in cam
+        if is_url:
+            os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                                  "rtsp_transport;tcp|max_delay;500000|stimeout;5000000")
+            cap=cv2.VideoCapture(cam, cv2.CAP_FFMPEG)
+        else:
+            cap=cv2.VideoCapture(cam)
+        try: cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
+        except Exception: pass
+        return cap
+
     def _capture(self):
-        cap=cv2.VideoCapture(self._cam)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
+        cap=self._open_capture()
+        fails=0
         while self._run:
             if self._pause: time.sleep(0.02); continue
-            ok,f=cap.read()
-            if not ok: time.sleep(0.02); continue
+            ok,f=False,None
+            try: ok,f=cap.read()
+            except Exception: ok=False
+            if not ok:
+                fails+=1
+                if fails>=50:                  # stream caiu (RTSP) → reconecta
+                    try: cap.release()
+                    except Exception: pass
+                    time.sleep(1.0)
+                    cap=self._open_capture()
+                    fails=0
+                else:
+                    time.sleep(0.02)
+                continue
+            fails=0
             self._live=f                       # vídeo ao vivo (independe da detecção)
             now=time.time()
             with self._flock:
@@ -736,7 +764,7 @@ class App:
         self._fn=0
 
         # ── Fase 3: integração com o dashboard (perfil ativo + zonas + ingestão) ──
-        self._dash=None; self._zones=[]; self._last_ingest_ts=0.0
+        self._dash=None; self._zones=[]; self._last_ingest_ts=0.0; self._was_violating=False
         if ingest and dashboard_url and station_id:
             try:
                 from dashboard_client import DashboardClient
@@ -878,6 +906,10 @@ class App:
             else:
                 self.sb.update_pose(POSTURE_SAFE,[],0)
 
+            # Zonas AO VIVO: recarrega do dashboard a cada ~5 s (desenhar em /config aparece sem reiniciar)
+            if self._dash is not None and self._fn % 150 == 0:
+                try: self._zones = self._dash.zones()
+                except Exception: pass
             # Zonas de risco configuradas no dashboard (relativas 0..1 -> pixels)
             if self._pose_est:
                 self._pose_est.set_danger_zones(self._scaled_zones(f))
@@ -885,8 +917,13 @@ class App:
             if self._dash is not None:
                 if self._fusion:
                     self._observe_frame(r)          # multi-câmera: reporta presença
-                elif hv or pose_risk:
-                    self._ingest_events(vd, people)
+                else:
+                    violating = bool(hv or pose_risk)
+                    if violating:
+                        self._ingest_events(vd, people)
+                    elif self._was_violating:
+                        self._dash.belt_conforme()   # voltou a conforme → cinto verde na hora
+                    self._was_violating = violating
 
             cam=render_cam(
                 f if f is not None else ph,

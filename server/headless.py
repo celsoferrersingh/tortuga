@@ -20,7 +20,14 @@ from dashboard_client import DashboardClient
 
 
 def _open(src):
-    cap = cv2.VideoCapture(src)
+    # RTSP (camera IP): FFMPEG com transporte TCP (mais estavel que UDP) e baixa latencia.
+    is_url = isinstance(src, str) and "://" in src
+    if is_url:
+        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                              "rtsp_transport;tcp|max_delay;500000|stimeout;5000000")
+        cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
+    else:
+        cap = cv2.VideoCapture(src)
     try: cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     except Exception: pass
     return cap
