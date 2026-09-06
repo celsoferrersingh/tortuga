@@ -31,3 +31,6 @@ _backups/
 
 # Config real com CREDENCIAIS das cameras — NAO versionar (versione so o .example)
 server/tortuga.config.json
+
+# O site tem repositorio proprio (tortuga-site / GitHub Pages) — nao versionar aqui
+site/
