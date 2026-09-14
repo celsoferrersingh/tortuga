@@ -677,6 +677,15 @@ class DetectionPipeline:
         while self._run:
             try: f=self._pose_q.get(timeout=0.1)
             except queue.Empty: continue
+            # Multitarefa (estilo SO): janela minimizada -> Fase 2 em 2o plano.
+            # Pausa a inferencia de pose (o que mais pesa na GPU) e limpa o estado.
+            if getattr(self,"_pose_paused",False):
+                with self._rlock:
+                    self._result["people"]=[]
+                    self._result["pose_risk"]=False
+                    self._result["pose_details"]=[]
+                time.sleep(0.05)
+                continue
             people=self._pose.detect(f)
             pr=self._pose.has_immediate_risk(people)
             pd=self._pose.get_risk_summary(people)
@@ -690,6 +699,23 @@ class DetectionPipeline:
         with self._rlock: r=dict(self._result)
         if self._live is not None:            # mostra o frame ao vivo, não o detectado
             r["frame"]=self._live
+        # ── Zona de exclusão de máquinas (ex.: braço robótico fixo no quadro) ──
+        # Descarta detecções cujo CENTRO cai numa região ignorada. Impede que
+        # máquinas fixas sejam tratadas como pessoas, sem afetar o resto da cena.
+        ign=getattr(self,"_ignore",None); _fr=r.get("frame")
+        if ign and _fr is not None:
+            _H,_W=_fr.shape[:2]
+            def _ig(b):
+                if not b: return False
+                cx=(b[0]+b[2])/2.0; cy=(b[1]+b[3])/2.0
+                return any(x1*_W<=cx<=x2*_W and y1*_H<=cy<=y2*_H for (x1,y1,x2,y2) in ign)
+            r["dets"]=[d for d in r.get("dets",[]) if not _ig(d.get("bbox"))]
+            _ppl=r.get("people")
+            if _ppl:
+                r["people"]=[p for p in _ppl if not _ig(p.get("bbox"))]
+                if self._pose is not None:
+                    r["pose_risk"]=self._pose.has_immediate_risk(r["people"])
+                    r["pose_details"]=self._pose.get_risk_summary(r["people"])
         r["dets"]=PPEDetector.filter_by_station(r["dets"],required_epis)
         r["hv"]=any(d["is_violation"] for d in r["dets"])
         r["vd"]=[f"{d['class_name']} ({d['confidence']:.0%})"
@@ -731,8 +757,10 @@ class DetectionPipeline:
 class App:
     def __init__(self, camera, model_path, confidence, enable_pose=True,
                  det_size=640, dashboard_url=None, station_id=None, ingest=False,
-                 device=None, preprocess=False, fusion=False, camera_id=None):
+                 device=None, preprocess=False, fusion=False, camera_id=None,
+                 ignore=None):
         self._fusion = bool(fusion)
+        self._station_id = station_id
         print("\n  Tortuga PPE Monitor  v3.2  (Fase 1 + Fase 2)")
         print("  Carregando modelos...")
         self.det=PPEDetector(model_path, confidence=confidence,
@@ -761,6 +789,9 @@ class App:
         self.sb.pose_enabled=(self._pose_est is not None)
         self.pipe=DetectionPipeline(camera,self.det,self._pose_est,
                                     det_size=det_size)
+        self.pipe._ignore = ignore or []
+        if self.pipe._ignore:
+            print(f"  Zonas de exclusao de maquina: {len(self.pipe._ignore)} regiao(oes) ignorada(s)")
         self._fn=0
 
         # ── Fase 3: integração com o dashboard (perfil ativo + zonas + ingestão) ──
@@ -857,11 +888,21 @@ class App:
             pass
 
     def run(self):
-        win="Tortuga - PPE Monitor"
+        win="Tortuga - "+(self._station_id or "PPE Monitor")
         cv2.namedWindow(win,cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win,self._total_w,self._total_h)
         cv2.moveWindow(win,0,0)
         cv2.setMouseCallback(win,self._mouse)
+
+        # ── Multitarefa (estilo SO): pausa a Fase 2 quando a janela e minimizada ──
+        # (libera GPU p/ a janela ativa). Degrada-seguro: se a checagem falhar, a
+        # pose permanece ligada. Usa a API user32 do Windows.
+        _user32=None; _hwnd=0
+        try:
+            import ctypes
+            _user32=ctypes.windll.user32
+        except Exception:
+            _user32=None
 
         ph=np.full((self._ch,self._cw,3),BG,dtype=np.uint8)
         T(ph,"Aguardando camera...",self._cw//2,self._ch//2-14,
@@ -869,6 +910,15 @@ class App:
 
         while True:
             self._fn+=1
+            # Multitarefa: se a janela desta camera estiver minimizada, pausa a Fase 2.
+            if _user32 is not None:
+                try:
+                    if not _hwnd:
+                        _hwnd=_user32.FindWindowW(None, win)
+                    if _hwnd:
+                        self.pipe._pose_paused=bool(_user32.IsIconic(_hwnd))
+                except Exception:
+                    self.pipe._pose_paused=False
             r=self.pipe.get(self.sb.required())
             f=r["frame"]; hv=r["hv"]; vd=r["vd"]; fps=r["fps"]; dets=r["dets"]
             people   =r.get("people",[])
@@ -933,6 +983,17 @@ class App:
                 pose_enabled=self.sb.pose_enabled,
                 danger_zones=self._pose_est.danger_zones if self._pose_est else [],
             )
+            # Zona(s) de exclusão de máquina — bem visíveis p/ conferir/ajustar
+            if getattr(self.pipe,"_ignore",None):
+                for (x1,y1,x2,y2) in self.pipe._ignore:
+                    q1=(max(0,int(x1*self._cw)),max(0,int(y1*self._ch)))
+                    q2=(min(self._cw-1,int(x2*self._cw)),min(self._ch-1,int(y2*self._ch)))
+                    ov=cam.copy()
+                    cv2.rectangle(ov,q1,q2,(0,0,0),-1)                 # preenche
+                    cv2.addWeighted(ov,0.38,cam,0.62,0,cam)           # escurece a zona (fica óbvia)
+                    cv2.rectangle(cam,q1,q2,(0,170,255),3)            # borda laranja (BGR)
+                    cv2.rectangle(cam,(q1[0],q1[1]),(min(q1[0]+188,q2[0]),q1[1]+28),(0,170,255),-1)
+                    T(cam,"ZONA IGNORADA",q1[0]+8,q1[1]+6,sz=0.44,color=(20,20,20),bold=True)
             # Selo "ENVIADO AO DASHBOARD" — pisca ~1,6s a cada ingestão real (Fase 3)
             if self._dash is not None and time.time()-self._last_ingest_ts < 1.6:
                 S=self._ch/480.0
@@ -983,6 +1044,8 @@ def main():
     p.add_argument("--fusion", action="store_true",
                    help="Fusao multi-camera: reporta presenca; o servidor funde varios angulos da estacao")
     p.add_argument("--camera-id", default=None, help="ID unico desta camera (p/ fusao na mesma estacao)")
+    p.add_argument("--ignore", default=None,
+                   help="JSON de regioes a IGNORAR (maquinas fixas), normalizadas 0..1: '[[x1,y1,x2,y2],...]'")
     a=p.parse_args()
     cam=int(a.camera) if str(a.camera).isdigit() else a.camera
     if a.preprocess_opts:
@@ -991,10 +1054,12 @@ def main():
         pre = {"adaptive": True}
     else:
         pre = False
+    ignore = json.loads(a.ignore) if a.ignore else None
     App(cam, a.model, a.confidence, enable_pose=not a.no_pose,
         det_size=a.det_size, dashboard_url=a.dashboard,
         station_id=a.station_id, ingest=(a.ingest or a.fusion),
-        device=a.device, preprocess=pre, fusion=a.fusion, camera_id=a.camera_id).run()
+        device=a.device, preprocess=pre, fusion=a.fusion, camera_id=a.camera_id,
+        ignore=ignore).run()
 
 if __name__=="__main__":
     main()

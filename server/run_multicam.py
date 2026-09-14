@@ -54,6 +54,9 @@ def build_cmd(cam, cfg):
             argv += ["--ingest"]
         if not g("pose", True):
             argv += ["--no-pose"]
+        ig = cam.get("ignore")
+        if ig:
+            argv += ["--ignore", json.dumps(ig)]
     return argv
 
 
