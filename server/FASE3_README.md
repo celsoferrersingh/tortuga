@@ -25,7 +25,7 @@ o `gui.py` aplica as zonas sobre o vídeo e a entrada na zona aciona o alerta.
 
 | Arquivo | Papel |
 |---|---|
-| `risk_engine.py` | Motor preditivo: Poisson + TLC + teste de hipóteses. |
+| `risk_engine.py` | Motor preditivo: Poisson + TLC + teste de hipóteses + diagnóstico de superdispersão (Binomial Negativa / quasi-Poisson). |
 | `events_store.py` | Perfis (EPIs/confiança), cintos (device↔operador), zonas e eventos. |
 | `seed_events.py` | Dados sintéticos realistas (perfis, cintos, zonas, eventos). |
 | `severity.py` / `notifier.py` | Severidade (3 níveis) + envio ao ESP (HTTP) e gestão. |
@@ -34,6 +34,58 @@ o `gui.py` aplica as zonas sobre o vídeo e a entrada na zona aciona o alerta.
 | `gen_qr.py` | Gera os QR dos cintos + folha imprimível. |
 | `templates/` | `dashboard.html`, `config.html`, `checkin.html`. |
 | `../firmware/tortuga_esp32/` | Sketch do cinto (OLED + LED + buzzer + vibração). |
+
+## Motor preditivo — Poisson × Binomial Negativa (robustez)
+
+O `risk_engine.py` modela cada operador como um processo de **Poisson**: com `k`
+eventos em `t` turnos, a taxa estimada é `λ̂ = k/t` e a probabilidade de ao menos
+um incidente no próximo turno vem **direto da Poisson**, `P(N≥1) = 1 − e^(−λ̂)`.
+O **TLC** dá a incerteza (`IC 95% = λ̂ ± 1,96·√(λ̂/t)`) e um **teste de hipóteses**
+(Poisson exato, `p = P(K ≥ k | λ₀)`) valida quem está acima da base do grupo `λ₀`.
+
+**Validação da premissa (por que combinamos com a Binomial Negativa).** A Poisson
+supõe **equidispersão** (variância = média). Quando os operadores são heterogêneos
+— alguns concentram quase todas as ocorrências — a variância fica **maior** que a
+média (**superdispersão**), e a Poisson pura ficaria *confiante demais* (IC estreito,
+p-valor otimista). Por isso o motor **mede a dispersão** com o índice de Pearson
+
+```
+φ = (1/gl) · Σ (kᵢ − λ₀·tᵢ)² / (λ₀·tᵢ)
+```
+
+- **φ ≈ 1** → equidispersão confirmada → **Poisson** (modelo mais parcimonioso).
+- **φ > 1,5** → superdispersão → escala para **Binomial Negativa / quasi-Poisson**:
+  os IC são **alargados por √φ** e o p-valor passa a ser **robusto** (`z' = z/√φ`),
+  usado na decisão de significância. Assim o modelo **nunca fica confiante demais**.
+
+A Binomial Negativa (Pascal) é a Poisson com taxa que varia (mistura Poisson–Gama),
+o que produz variância > média; a **Poisson é o caso particular** sem dispersão
+extra. Começamos por ela (parcimônia, pouco dado) e ativamos a BN só quando os
+próprios dados pedem. O `/api/risk` expõe o diagnóstico do grupo (`dispersion`: φ,
+recomendação, `r` da BN) e, por operador, o `model` e o `p_value_robust`; o
+dashboard mostra o selo **“Poisson validada”** ou **“Binomial Negativa ativada”**.
+
+**“Quando?” — turnos até o próximo incidente (Geométrica = Binomial Negativa r=1).**
+A Poisson responde *qual a probabilidade* no próximo turno; a Binomial Negativa
+responde também *em quantos turnos* o próximo incidente tende a ocorrer. Tratando
+cada turno como um ensaio de Bernoulli com “sucesso” = ter ≥1 evento (probabilidade
+`p = 1 − e^(−λ̂)`), o número de turnos até o próximo incidente segue a **Geométrica**,
+que é a Pascal/Binomial Negativa com **r = 1** (“nº de tentativas até o 1º sucesso”):
+
+```
+E[turnos até o próximo] = 1 / p            (Pascal geral: r/p até o r-ésimo incidente)
+P(≥1 incidente em m turnos) = 1 − (1 − p)^m
+```
+
+A faixa (otimista–pessimista) usa o **IC robusto** de λ̂ (já alargado por √φ): taxa
+maior → espera menor; taxa menor → espera maior. O motor expõe `eta_shifts`,
+`eta_low` e `eta_high` por operador, e o dashboard traz a linha *“Próximo incidente
+previsto para OP-xxx em ~N turnos”* — a mesma Binomial Negativa que dá robustez à
+contagem responde “o próximo, quando?”, fechando o ciclo prever → validar → agir.
+
+Autoteste: `python risk_engine.py` imprime λ₀, φ, a coluna `p(robust)` e o efeito
+da correção no IC (Poisson puro vs ×√φ), com asserts que garantem que o outlier
+segue sinalizado de forma robusta e nenhum operador normal é falsamente acusado.
 
 ## Como rodar (e demonstrar na banca)
 
@@ -68,3 +120,5 @@ python gui.py --ingest --station-id EST-PRE --dashboard http://localhost:5005 --
 - `GET/POST /api/zones`, `PUT/DELETE /api/zones/<id>` — zonas de risco.
 - `POST /api/ingest {station_id,type,epi}` — evento real (resolve o operador ativo).
 - `GET /api/risk | /api/stats | /api/timeseries | /api/events` — dashboard.
+  O `/api/risk` inclui `dispersion` (φ, recomendação, `r` da BN) e, por operador,
+  `model` e `p_value_robust` (validação Poisson × Binomial Negativa).

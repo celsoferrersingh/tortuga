@@ -79,6 +79,32 @@ canvas{max-height:230px}
 .ai-tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
  letter-spacing:.04em;text-transform:uppercase;color:var(--blue);
  background:rgba(0,113,227,.10);border-radius:20px;padding:3px 9px}
+/* validação do modelo (Poisson × Binomial Negativa) */
+.mval{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px;
+ border:1px solid var(--method-border);background:var(--method-bg);border-radius:var(--radius);padding:10px 14px}
+.mval .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
+ border-radius:20px;padding:4px 11px;white-space:nowrap}
+.mval .pill.ok{color:#1E8E3E;background:rgba(52,199,89,.14)}
+.mval .pill.bn{color:#B26B00;background:rgba(255,149,0,.14)}
+.mval .phi{font-family:var(--hsans);font-weight:700}
+.mval .txt{font-size:12.5px;color:var(--text2);line-height:1.5}
+.mdl{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;white-space:nowrap}
+.mdl.ok{color:#1E8E3E;background:rgba(52,199,89,.12)}
+.mdl.bn{color:#B26B00;background:rgba(255,149,0,.14)}
+/* tempo de espera: turnos até o próximo incidente (Geométrica/BN) */
+.eta-hl{display:flex;align-items:center;gap:10px;margin:2px 0 12px;border-radius:var(--radius);
+ padding:11px 14px;background:linear-gradient(90deg,rgba(0,113,227,.10),rgba(0,113,227,.02));
+ border:1px solid var(--method-border)}
+.eta-hl .clk{font-size:18px;flex:0 0 auto}
+.eta-hl b{font-family:var(--hsans)}
+.eta-hl .n{font-family:var(--hsans);font-weight:700;color:var(--blue)}
+.eta-cell{font-variant-numeric:tabular-nums}
+details.math{margin-top:10px}
+details.math summary{cursor:pointer;color:var(--link);font-weight:600;font-size:12.5px;list-style:none}
+details.math summary::-webkit-details-marker{display:none}
+details.math summary::before{content:"▸ ";color:var(--link)}
+details.math[open] summary::before{content:"▾ "}
+details.math .mbody{margin-top:8px}
 .areasel{background:var(--surface);color:var(--text);border:1px solid var(--border);
  border-radius:var(--radius);padding:6px 8px;font-size:12.5px;font-family:var(--bsans)}
 .eff{font-size:11px;color:var(--muted);margin-top:3px}
@@ -129,11 +155,13 @@ canvas{max-height:230px}
       <div class="card">
         <h2>Risco preditivo por operador</h2>
         <div class="sub">Probabilidade de incidente no próximo turno — para ação pedagógica preventiva. λ₀ do grupo: <b id="lam0">—</b> ev/turno</div>
+        <div class="eta-hl" id="etahl" style="display:none"></div>
+        <div class="mval" id="mval"></div>
         <table>
           <thead><tr>
             <th>Operador</th><th>Área · Turno</th><th class="num">Ev.</th>
             <th class="num">λ̂</th><th>P(próx. turno)</th><th class="num">IC 95%</th>
-            <th class="num">p-valor</th><th>Nível</th><th>Ação sugerida</th>
+            <th class="num">p-valor</th><th>Modelo</th><th>Nível</th><th>Ação sugerida</th>
           </tr></thead>
           <tbody id="risk"></tbody>
         </table>
@@ -147,7 +175,21 @@ canvas{max-height:230px}
       </div>
       <div class="card">
         <h2>Como prevemos</h2>
-        <p class="method">Modelamos cada operador como um processo de <b>Poisson</b> (λ̂ = eventos / turnos). A probabilidade de incidente no próximo turno é <code>P = 1 − e^(−λ̂)</code>. O intervalo vem do <b>Teorema do Limite Central</b>, e um <b>teste de hipóteses</b> (Poisson exato) valida quem está acima da base com p &lt; 0,05 — sinal, não ruído. Identidade anonimizada (LGPD).</p>
+        <div class="method">Modelamos cada operador como um processo de <b>Poisson</b> (λ̂ = eventos / turnos). A probabilidade de incidente no próximo turno é <code>P = 1 − e^(−λ̂)</code>. O intervalo vem do <b>Teorema do Limite Central</b>, e um <b>teste de hipóteses</b> (Poisson exato) valida quem está acima da base com p &lt; 0,05 — sinal, não ruído.
+          <p style="margin-top:10px">Antes de confiar na Poisson, <b>testamos a premissa dela</b> (variância = média) com o índice de dispersão <b>φ</b>. Se os operadores forem muito heterogêneos (φ &gt; 1, <b>superdispersão</b>), o modelo escala sozinho para a <b>Binomial Negativa / quasi-Poisson</b>: alarga os intervalos por √φ e usa um p-valor robusto — assim <b>nunca fica confiante demais</b>. A Poisson é o caso particular da BN sem dispersão extra.</p>
+          <p style="margin-top:10px">E respondemos também <b>“quando?”</b>: a Poisson dá a probabilidade; a <b>Geométrica</b> — que é a Binomial Negativa com r=1 (“turnos até o 1º incidente”) — estima <b>em quantos turnos</b> o próximo incidente tende a ocorrer, <code>E[N] = 1/p</code>, com <code>p = 1 − e^(−λ̂)</code>.</p>
+          <details class="math"><summary>Ver a matemática</summary>
+          <div class="mbody">
+            Estimativa da taxa (MLE): <code>λ̂ = k / t</code><br>
+            Previsão (direto da Poisson): <code>P(N≥1) = 1 − e^(−λ̂·h)</code><br>
+            IC 95% (TLC): <code>λ̂ ± 1,96·√(λ̂/t)</code><br>
+            Teste exato: <code>p = P(K ≥ k | λ₀)</code><br>
+            Dispersão (Pearson): <code>φ = (1/gl)·Σ(kᵢ−λ₀tᵢ)²/(λ₀tᵢ)</code><br>
+            Se φ &gt; 1,5 → robusto: <code>IC ×√φ</code> · <code>z' = z/√φ</code> (quasi-Poisson/BN)<br>
+            Quando (Geométrica/BN r=1): <code>E[turnos] = 1/p</code> · <code>P(≤m turnos) = 1−(1−p)^m</code>
+          </div></details>
+          <p style="margin-top:10px" class="small muted">Identidade anonimizada (LGPD).</p>
+        </div>
       </div>
     </div>
   </div>
@@ -194,7 +236,7 @@ canvas{max-height:230px}
     <div class="feed" id="feed"></div>
   </div>
 </div>
-<footer>Projeto Tortuga · PPE Safety Monitor · Fase 3 · Poisson · TLC · Teste de Hipóteses · LGPD-aware</footer>
+<footer>Projeto Tortuga · PPE Safety Monitor · Fase 3 · Poisson · Binomial Negativa · TLC · Teste de Hipóteses · LGPD-aware</footer>
 
 <script>
 const SEVC={critica:'#FF3B30',alta:'#FF9500',informativa:'#0071E3'};
@@ -214,15 +256,34 @@ async function load(){
   ].map(k=>`<div class="kpi"><b style="color:${k[2]}">${k[1]}</b><span>${k[0]}<br><span class="cap">${k[3]}</span></span></div>`).join('');
 
   document.getElementById('lam0').textContent=fmt(risk.lambda0);
+  // validação do modelo: Poisson vs Binomial Negativa (superdispersão)
+  const disp=risk.dispersion||{}; const over=!!disp.overdispersed;
+  document.getElementById('mval').innerHTML=over
+    ? `<span class="pill bn">⚠ Binomial Negativa / quasi-Poisson ativada</span>
+       <span class="txt">Superdispersão detectada (<span class="phi">φ = ${fmt(disp.phi)}</span>${disp.nb_r?` · BN r = ${fmt(disp.nb_r)}`:''}) — variância acima da média. Intervalos alargados por √φ e p-valor robusto: o modelo <b>não fica confiante demais</b>.</span>`
+    : `<span class="pill ok">✓ Poisson validada</span>
+       <span class="txt">Equidispersão confirmada (<span class="phi">φ = ${fmt(disp.phi)}</span> ≈ 1) — variância ≈ média. A Poisson é adequada (modelo mais parcimonioso).</span>`;
+  const etaBand=w=>w.eta_low==null?'':` (${fmt(w.eta_low)}–${w.eta_high==null?'∞':fmt(w.eta_high)})`;
   document.getElementById('risk').innerHTML=risk.workers.map(w=>{
     const pct=Math.round(w.p_next_shift*100);
+    const bn=(w.model||'').includes('BN');
+    const mdl=bn?`<span class="mdl bn">Poisson +BN</span>`:`<span class="mdl ok">Poisson</span>`;
+    const prob=bn?`<div class="small muted" title="p-valor robusto (quasi-Poisson/BN)">rob. ${(w.p_value_robust).toFixed(3)}${w.significant?' *':''}</div>`:'';
+    const eta=w.eta_shifts==null?'':`<div class="small muted eta-cell" title="Geométrica = Binomial Negativa(r=1): turnos até o próximo incidente">≈ ${fmt(w.eta_shifts)} turno(s) até o próx.${etaBand(w)}</div>`;
     return `<tr><td><b>${w.worker_id}</b></td><td class="muted small">${w.area} · ${w.turno}</td>
       <td class="num">${w.events}</td><td class="num">${fmt(w.lambda_hat)}</td>
-      <td><div style="display:flex;align-items:center;gap:8px"><div class="pbar"><i style="width:${pct}%;background:${pColor(w.risk_level)}"></i></div><span style="color:${pColor(w.risk_level)};font-weight:600">${pct}%</span></div></td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div class="pbar"><i style="width:${pct}%;background:${pColor(w.risk_level)}"></i></div><span style="color:${pColor(w.risk_level)};font-weight:600">${pct}%</span></div>${eta}</td>
       <td class="num muted small">${fmt(w.ci_low)}–${fmt(w.ci_high)}</td>
-      <td class="num ${w.significant?'sig':''}">${w.p_value_exact.toFixed(3)}${w.significant?' *':''}</td>
+      <td class="num ${w.significant?'sig':''}" title="p-valor exato de Poisson">${w.p_value_exact.toFixed(3)}${(w.significant&&!bn)?' *':''}${prob}</td>
+      <td>${mdl}</td>
       <td><span class="badge ${levelClass(w.risk_level)}">${w.risk_level}</span></td>
       <td class="muted small">${w.recommendation}</td></tr>`;}).join('');
+  // destaque: quando o próximo incidente tende a ocorrer (operador de maior risco)
+  const topEta=risk.workers.find(w=>w.eta_shifts!=null), eh=document.getElementById('etahl');
+  if(topEta){eh.style.display='flex';
+    const band=topEta.eta_low==null?'':` <span class="muted small">(janela ${fmt(topEta.eta_low)}–${topEta.eta_high==null?'∞':fmt(topEta.eta_high)} turnos)</span>`;
+    eh.innerHTML=`<span class="clk">⏱</span><div>Próximo incidente previsto para <b>${topEta.worker_id}</b> em <span class="n">~${fmt(topEta.eta_shifts)} turno(s)</span>${band} <span class="muted small">· Geométrica / Binomial Negativa (r=1)</span></div>`;
+  }else{eh.style.display='none';}
 
   const sl=Object.keys(stats.by_severity);
   drawDoughnut('sevChart',sl.map(s=>(stats.severity_meta[s]||{}).label||s),sl.map(s=>stats.by_severity[s]),sl.map(s=>SEVC[s]||'#888'));

@@ -1,0 +1,11 @@
+# Tortuga — dependencias no macOS ARM (Apple Silicon). Instale via setup_mac.command.
+# No Mac ARM o PyTorch ja traz suporte a Metal (MPS) — sem indice CUDA.
+torch
+torchvision
+ultralytics
+opencv-python
+numpy
+flask
+qrcode[pil]
+pillow-heif
+pyobjc-framework-Quartz    # tamanho de tela nativo no macOS (opcional, recomendado)

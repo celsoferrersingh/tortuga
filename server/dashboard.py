@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse, json, os, threading, urllib.request
 from flask import Flask, jsonify, render_template, request, Response
 from events_store import EventStore
-from risk_engine import rank_workers, rank_areas
+from risk_engine import rank_workers, rank_areas, dispersion_report
 import severity as sev_policy
 import engagement, audit
 from fusion import FusionCoordinator
@@ -62,8 +62,11 @@ def create_app(db_path="data/tortuga.db"):
     @app.route("/api/risk")
     def api_risk():
         h = int(request.args.get("horizon", 1))
-        lam0, ranking = rank_workers(store.worker_summaries(), horizon=h)
+        summaries = store.worker_summaries()
+        lam0, ranking = rank_workers(summaries, horizon=h)
+        disp = dispersion_report(summaries, lam0)   # diagnóstico Poisson × BN (superdispersão)
         return jsonify({"lambda0": round(lam0, 3), "horizon": h,
+                        "dispersion": disp,
                         "workers": [r.to_dict() for r in ranking],
                         "n_significant": sum(1 for r in ranking if r.significant)})
 
