@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Tortuga · Folha de Pré-voo do Cinto ESP32</title>
+<style>
+  :root{--blue:#0071E3;--ink:#1D1D1F;--muted:#6E6E73;--line:#D2D2D7;--amber:#B26B00;--green:#1E8E3E;--red:#C81E14;--bg:#F5F5F7;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);line-height:1.45;font-size:12.5px;background:#fff}
+  .page{max-width:780px;margin:0 auto;padding:24px 30px}
+  header{border-bottom:2px solid var(--blue);padding-bottom:10px;margin-bottom:14px;
+         display:flex;align-items:flex-end;justify-content:space-between}
+  h1{color:var(--blue);font-size:21px;letter-spacing:-.02em}
+  h1 small{display:block;color:var(--muted);font-size:11.5px;font-weight:400;letter-spacing:0;margin-top:2px}
+  .tag{font-size:11px;color:var(--muted)}
+  h2{font-size:14px;margin:14px 0 6px;color:var(--ink);border-left:3px solid var(--blue);padding-left:8px}
+  p{margin:5px 0}
+  .muted{color:var(--muted)}
+  .diag{border:1px solid #F0D8A8;background:#FDF6E9;border-radius:9px;padding:11px 13px;margin:8px 0}
+  .diag b{color:var(--amber)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+  .card{border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:var(--bg)}
+  .card.a{border-color:#Bfe0c6;background:#F1FAF3}
+  .card h3{font-size:13px;margin-bottom:4px}
+  .card.a h3{color:var(--green)}
+  .pill{display:inline-block;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:6px}
+  .pill.rec{color:var(--green);background:rgba(52,199,89,.16)}
+  .pill.bk{color:var(--muted);background:#E9E9EC}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;border:1px solid var(--line);
+       border-radius:4px;padding:1px 5px;font-size:11.5px}
+  ol{margin:5px 0 5px 18px}ul{margin:4px 0 4px 18px}
+  li{margin:3px 0}
+  .test{border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin:10px 0}
+  .test b{color:var(--blue)}
+  .ok{color:var(--green);font-weight:700}.bad{color:var(--red);font-weight:700}
+  .buy{font-size:11.5px;margin-top:4px}
+  .chk{list-style:none;margin:6px 0 0 0}
+  .chk li{margin:4px 0;padding-left:22px;position:relative}
+  .chk li::before{content:"";position:absolute;left:0;top:1px;width:13px;height:13px;border:1.5px solid var(--muted);border-radius:3px}
+  .note{font-size:11px;color:var(--muted);margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+  @page{size:A4;margin:12mm}
+  @media print{body{font-size:11.5px}.page{padding:0}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Folha de Pré-voo · Cinto ESP32<small>Fazer o cinto conversar com o PC na metaindústria / arena</small></h1>
+    <div class="tag">Projeto Tortuga</div>
+  </header>
+
+  <div class="diag">
+    <p><b>Diagnóstico (confirmado).</b> O ESP conecta no Wi-Fi, mas o PC não fala com ele:
+    é <b>isolamento de clientes</b> da rede corporativa (a rede proíbe um dispositivo falar com o outro).
+    O sistema é PUSH — o PC faz <code>POST http://&lt;ip-do-esp&gt;/status</code> — então precisamos de um
+    caminho direto PC → ESP. <b>Solução:</b> colocar o cinto numa mini-rede do próprio PC, sem depender da
+    rede da empresa. As câmeras continuam na rede da empresa; só o cinto muda de rede.</p>
+  </div>
+
+  <div class="cols">
+    <div class="card a">
+      <h3>Plano A · Ponto de acesso do Windows <span class="pill rec">GRÁTIS · RECOMENDADO</span></h3>
+      <p class="muted">Sem comprar nada. O rádio Wi-Fi do Galaxy Book 4 Ultra segura o Wi-Fi das câmeras e o hotspot do cinto ao mesmo tempo.</p>
+      <ol>
+        <li>PC conectado no <b>Wi-Fi da empresa</b> (para as 4 câmeras).</li>
+        <li>Windows: <b>Configurações → Rede → Ponto de acesso móvel</b> → <b>Ativar</b>.
+            Em <b>Banda</b>, escolha <b>2,4 GHz</b> (o ESP não enxerga 5 GHz). Anote o <b>nome</b> e a <b>senha</b> do hotspot.</li>
+        <li>No cinto: segure <b>BOOT</b> e aperte <b>RST</b> para limpar o Wi-Fi salvo. Com o celular, conecte na
+            rede <code>Tortuga-Setup</code> (senha <code>tortuga123</code>), abra o navegador, escolha o <b>hotspot do PC</b> e digite a senha.</li>
+        <li>Pegue o IP do ESP na lista <b>“Dispositivos conectados”</b> do próprio Ponto de acesso
+            (ou no Serial Monitor: “IP do ESP32: …”). Será algo como <code>192.168.137.x</code>.</li>
+      </ol>
+      <p class="muted" style="margin-top:6px"><b>Boa notícia:</b> o hotspot fica salvo na flash do ESP.
+      Como o nome da rede (<code>GALAXYBOOK4</code>) viaja com o PC, na metaindústria/arena o cinto
+      <b>reconecta sozinho</b> — não precisa refazer este portal, só ligar o hotspot.</p>
+    </div>
+    <div class="card">
+      <h3>Plano B · Adaptador USB→Ethernet <span class="pill bk">SÓ SE O A FALHAR</span></h3>
+      <p class="muted">Se o hotspot não coexistir com o Wi-Fi das câmeras: PC no <b>cabo</b> para as câmeras e o Wi-Fi livre para o hotspot do cinto. Precisa de uma tomada de rede (RJ45) no local.</p>
+      <p class="buy"><b>O que comprar</b> (Galaxy Book 4 Ultra tem USB-C e USB-A):<br>
+        Adaptador <b>USB-C → Ethernet Gigabit</b> (ex.: TP-Link UE300C, UGREEN, Baseus) ou <b>USB-A → Ethernet</b> (TP-Link UE300).</p>
+      <p class="buy"><b>Onde</b>: Amazon.com.br, Mercado Livre, Kabum, Magazine Luiza, Fast Shop. Faixa <b>R$ 60–150</b>.
+        Leve também um <b>cabo de rede</b> curto.</p>
+    </div>
+  </div>
+
+  <div class="test">
+    <p><b>Teste de 2 minutos — faça ANTES de apresentar (e em casa esta semana):</b></p>
+    <ol>
+      <li>Com o ESP no hotspot, descubra o IP dele (passo 4 acima).</li>
+      <li>No <b>navegador do PC</b>, abra <code>http://&lt;ip-do-esp&gt;/</code>.</li>
+      <li>Apareceu <span class="ok">“Tortuga ESP32 OK. POST /status”</span> → PC ↔ ESP funciona, pode seguir.<br>
+          <span class="bad">Travou / demorou</span> → ainda há isolamento; confirme que o ESP está no <b>hotspot do PC</b> (não no Wi-Fi da empresa) e refaça o passo 3 do Plano A.</li>
+    </ol>
+    <p style="margin-top:6px"><b>Prova final (o cinto reage):</b> rode <code>testar_cinto.bat</code>, digite o IP e Enter →
+    o cinto fica <b>vermelho, apita e vibra</b> por ~7 s e volta ao verde. É o mesmo comando que o dashboard envia numa violação.</p>
+  </div>
+
+  <h2>Registrar o cinto e rodar</h2>
+  <p>Com o IP certo em mãos, é só rodar o lançador — ele pergunta o IP e registra sozinho:
+  <code>demo_limpo_metaindustria.bat</code> (apresentação limpa) ou <code>run_metaindustria.bat</code> (banco de testes).
+  Manual, se quiser: <code>set_esp.py --metaindustria --url http://&lt;ip&gt;</code>.
+  <span class="muted">Lembrete: naquele dia o cinto estava registrado no IP errado (10.14.22.216 era um PC). Sempre pegue o IP real do ESP.</span></p>
+
+  <h2>Checklist final (marque antes de apresentar)</h2>
+  <ul class="chk">
+    <li>Ponto de acesso móvel <b>ligado</b> e em <b>2,4 GHz</b></li>
+    <li>ESP conectado no <b>hotspot do PC</b> (não no Wi-Fi da empresa)</li>
+    <li><code>http://&lt;ip-do-esp&gt;/</code> abre “Tortuga ESP32 OK” no navegador do PC</li>
+    <li>As 4 câmeras aparecem (PC ainda no Wi-Fi da empresa)</li>
+    <li>Cinto reage ao <code>testar_cinto.bat</code> (vermelho + apito + vibração)</li>
+    <li>Cinto registrado com o IP certo (o <code>.bat</code> da demo perguntou e você digitou)</li>
+  </ul>
+
+  <div class="note">
+    ESP32 é 2,4 GHz apenas e usa Wi-Fi com senha (não entra em rede corporativa com login de usuário) — por isso o
+    hotspot do PC é o caminho mais confiável. O cinto só precisa alcançar o PC; as câmeras seguem independentes na rede da empresa.
+  </div>
+</div>
+</body>
+</html>

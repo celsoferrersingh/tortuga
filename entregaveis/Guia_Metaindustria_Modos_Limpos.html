@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Tortuga · Adendo — Modos de Apresentação Limpa</title>
+<style>
+  :root{--blue:#0071E3;--ink:#1D1D1F;--muted:#6E6E73;--line:#D2D2D7;--amber:#B26B00;--green:#1E8E3E;--bg:#F5F5F7;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);line-height:1.5;font-size:13px;background:#fff}
+  .page{max-width:760px;margin:0 auto;padding:28px 34px}
+  header{border-bottom:2px solid var(--blue);padding-bottom:12px;margin-bottom:18px;
+         display:flex;align-items:flex-end;justify-content:space-between}
+  h1{color:var(--blue);font-size:22px;letter-spacing:-.02em}
+  h1 small{display:block;color:var(--muted);font-size:12px;font-weight:400;letter-spacing:0;margin-top:2px}
+  .tag{font-size:11px;color:var(--muted)}
+  h2{font-size:15px;margin:18px 0 8px;color:var(--ink);border-left:3px solid var(--blue);padding-left:8px}
+  p{margin:6px 0}
+  .muted{color:var(--muted)}
+  .card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0;background:var(--bg)}
+  .card h3{font-size:14px;color:var(--blue);margin-bottom:4px}
+  code,.file{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;border:1px solid var(--line);
+             border-radius:4px;padding:1px 6px;font-size:12px}
+  .file{font-weight:700;color:var(--blue)}
+  ol{margin:6px 0 6px 20px}ul{margin:6px 0 6px 20px}
+  li{margin:3px 0}
+  .why{border:1px solid #F0D8A8;background:#FDF6E9;border-radius:10px;padding:12px 14px;margin:10px 0}
+  .why b{color:var(--amber)}
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.5px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .ok{color:var(--green);font-weight:600}
+  .note{font-size:11.5px;color:var(--muted);margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  @page{size:A4;margin:14mm}
+  @media print{body{font-size:12px}.page{padding:0}a{color:inherit;text-decoration:none}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Tortuga · Adendo do Guia<small>Modos de apresentação com dados limpos · Fase 3/NEXT</small></h1>
+    <div class="tag">Projeto Tortuga · SSMA preditivo</div>
+  </header>
+
+  <div class="why">
+    <p><b>Por que existem os “modos limpos”.</b> O banco de dados vai acumulando os eventos
+    de teste que você gera nos ensaios (câmeras, cinto, ingestões repetidas). Se apresentar
+    sobre esse banco, os indicadores ficam irreais (λ₀ altíssimo, φ nas alturas, conformidade 0%).
+    O motor está <b>correto</b> — o que está poluído é o histórico. Para a banca, use um dos dois
+    lançadores abaixo: eles sobem tudo sobre um banco <b>novo e realista</b> (<code>data\demo.db</code>),
+    repopulado do zero a cada execução, <b>sem tocar</b> no banco real (<code>data\tortuga.db</code>).</p>
+  </div>
+
+  <h2>1 · Modo casa / stand — webcam</h2>
+  <div class="card">
+    <h3><span class="file">demo_limpo.bat</span> &nbsp;(dois cliques na raiz C:\tortuga)</h3>
+    <p>Sobe o dashboard com dados limpos e abre a <b>webcam</b> com detecção de EPI + postura.
+    A violação ao vivo entra na estação <code>EST-PRE</code> (operador OP-007).</p>
+    <ol>
+      <li>Dê dois cliques em <span class="file">demo_limpo.bat</span>.</li>
+      <li>O painel abre em <code>http://localhost:5005</code> e o check-in (QR) em <code>/checkin</code>.</li>
+      <li>Faça uma violação na frente da webcam → o evento sobe no dashboard na hora.</li>
+    </ol>
+  </div>
+
+  <h2>2 · Modo metaindústria — câmeras RTSP</h2>
+  <div class="card">
+    <h3><span class="file">demo_limpo_metaindustria.bat</span></h3>
+    <p>Sobe o dashboard limpo, <b>re-registra o cinto ESP real</b> nesse banco demo e inicia as
+    câmeras da configuração (1 janela + as demais em segundo plano, com a zona de exclusão do braço robótico).</p>
+    <ol>
+      <li>Confira o RTSP em <code>server\tortuga.config.json</code> e tenha o <b>IP do ESP</b> em mãos
+          (Serial Monitor do Arduino: linha “IP do ESP32: …”).</li>
+      <li>Dê dois cliques em <span class="file">demo_limpo_metaindustria.bat</span>.</li>
+      <li>Quando pedir, digite o <b>IP do ESP</b> (ex.: <code>10.14.22.10</code>) e Enter.
+          <span class="muted">Vazio = pula; o cinto não apita.</span></li>
+      <li>Painel + check-in abrem sozinhos; as câmeras sobem em seguida. A violação ao vivo cai em <b>OP-DEMO</b>.</li>
+    </ol>
+  </div>
+
+  <h2>3 · Números esperados (base sintética realista)</h2>
+  <table>
+    <tr><th>Indicador</th><th>Antes (banco poluído)</th><th>Agora (modo limpo)</th></tr>
+    <tr><td>λ₀ do grupo</td><td>~9 ev/turno</td><td class="ok">~0,4 ev/turno</td></tr>
+    <tr><td>Dispersão φ</td><td>~24.795</td><td class="ok">saudável (baixa)</td></tr>
+    <tr><td>Conformidade</td><td>0%</td><td class="ok">alta</td></tr>
+    <tr><td>Maior risco</td><td>tudo 100%</td><td class="ok">OP-007 (Prensa), OP-009 (Pintura)</td></tr>
+    <tr><td>Ao vivo</td><td>—</td><td class="ok">a violação cai em OP-DEMO e sobe o risco</td></tr>
+  </table>
+  <p class="muted">Como o banco demo é repopulado a cada execução, você pode ensaiar quantas vezes quiser —
+  sempre começa do estado limpo. A BN (superdispersão) tende a ativar quando o operador ao vivo vira outlier,
+  o que é ótimo para demonstrar o diferencial estatístico.</p>
+
+  <div class="note">
+    <b>Se precisar limpar o banco real de vez</b> (em vez de usar o demo.db): no <code>server\</code>,
+    <code>python seed_events.py --force</code> apaga e repopula com dados realistas — mas isso remove o
+    cinto/OP-DEMO da metaindústria, então rode o <span class="file">set_esp_metaindustria.bat</span> de novo
+    (com o IP do ESP) antes de um teste com o cinto. Para a banca, prefira os modos limpos acima.
+  </div>
+</div>
+</body>
+</html>
