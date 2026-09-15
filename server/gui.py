@@ -501,8 +501,13 @@ def render_cam(frame, dets, has_v, fps, paused, fn, W, H,
     rx,ry=W/max(w_orig,1),H/max(h_orig,1)
 
     # Zonas de perigo (EPC)
+    # As zonas chegam em pixels do frame ORIGINAL (_scaled_zones usa f.shape).
+    # Como 'out' e o frame REDIMENSIONADO para o display, precisam ser reescaladas
+    # por rx/ry — igual ja e feito com os keypoints e as bboxes. Sem isso a zona
+    # aparecia menor e deslocada para o canto superior esquerdo.
     if _POSE_AVAILABLE and danger_zones:
-        render_danger_zones(out, danger_zones)
+        _dz = [[[int(px * rx), int(py * ry)] for px, py in z] for z in danger_zones]
+        render_danger_zones(out, _dz)
 
     # Esqueleto + RULA + alertas temporais
     if _POSE_AVAILABLE and pose_enabled and people:

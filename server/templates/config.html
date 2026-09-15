@@ -69,13 +69,21 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
       <table><thead><tr><th>Cinto</th><th>Estação</th><th>Operador ativo</th></tr></thead><tbody id="belts"></tbody></table>
     </div>
     <div class="card"><h2>Zonas de risco</h2>
-      <div class="sub">Áreas com nível de severidade próprio, aplicadas à pose.</div>
+      <div class="sub">Áreas que <b>geram alerta</b> quando alguém entra, cada uma com seu nível de severidade.</div>
       <table><thead><tr><th>Nome</th><th>Nível</th><th>Estação</th><th></th></tr></thead><tbody id="zones"></tbody></table>
     </div>
   </div>
   <div class="card">
-    <h2>Desenhar nova zona</h2>
-    <div class="sub">Clique no quadro para marcar os vértices. As coordenadas são salvas em proporção (0–1) e renderizadas sobre o vídeo real.</div>
+    <h2>Desenhar nova zona de risco</h2>
+    <div class="sub">Zona de risco <b>gera alerta</b> quando alguém entra — é o oposto da zona de exclusão (logo abaixo), que
+      <b>remove</b> da cena. Escolha a câmera para desenhar <b>sobre a imagem real</b> e <b>clique</b> no quadro para marcar os
+      vértices do polígono (mínimo 3). As coordenadas são salvas em proporção (0–1) e renderizadas sobre o vídeo.</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="small muted">Câmera (fundo):</span>
+      <select id="zstpick"><option value="">— escolha a estação —</option></select>
+      <button class="ghost" id="zbgrefresh">Atualizar imagem</button>
+      <span class="small muted" id="zbgst">—</span>
+    </div>
     <div class="grid2">
       <canvas id="cv" width="640" height="360"></canvas>
       <div>
@@ -148,10 +156,11 @@ async function loadZones(){
   document.getElementById('zones').innerHTML=zs.map(z=>`<tr><td>${z.name}</td><td><span class="lvl l-${z.level}">${z.level}</span></td><td class="small muted">${z.station_id||'—'}</td><td><button class="ghost" onclick="delZone(${z.id})">remover</button></td></tr>`).join('')||'<tr><td colspan="4" class="muted small">Nenhuma zona ainda.</td></tr>';
 }
 async function delZone(id){await j('/api/zones/'+id,'DELETE');loadZones();toast('zona removida');}
-let pts=[];const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let pts=[],zbg=null;const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 function draw(){
   ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.strokeStyle='#E5E5EA';for(let x=0;x<cv.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke();}
+  if(zbg) ctx.drawImage(zbg,0,0,cv.width,cv.height);   // frame REAL da camera
+  ctx.strokeStyle=zbg?'rgba(255,255,255,.20)':'#E5E5EA';for(let x=0;x<cv.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke();}
   for(let y=0;y<cv.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cv.width,y);ctx.stroke();}
   if(pts.length){ctx.beginPath();ctx.moveTo(pts[0][0]*cv.width,pts[0][1]*cv.height);pts.forEach(p=>ctx.lineTo(p[0]*cv.width,p[1]*cv.height));if(pts.length>2)ctx.closePath();
     ctx.fillStyle='rgba(255,59,48,.16)';ctx.fill();ctx.strokeStyle='#FF3B30';ctx.lineWidth=2;ctx.stroke();
@@ -170,22 +179,26 @@ document.getElementById('zsave').onclick=async()=>{
 };
 // ── Zonas de EXCLUSAO de maquina (retangulo por arrasto) ──
 let xr=null,xdrag=null,xall=[],xbg=null;
-async function xloadStations(){
+async function loadSnapStations(){   // preenche os DOIS seletores de camera
   const ss=await j('/api/snapshots');
-  const sel=document.getElementById('xstpick'),cur=sel.value;
-  sel.innerHTML='<option value="">— escolha a estação —</option>'+
-    ss.map(s=>`<option value="${s.station_id}">${s.station_id} · imagem de ${s.age}s atrás</option>`).join('');
-  sel.value=cur;
-  if(!ss.length)document.getElementById('xbgst').textContent='nenhuma câmera enviando imagem ainda — abra o detector';
+  [['xstpick','xbgst'],['zstpick','zbgst']].forEach(([sid,stid])=>{
+    const sel=document.getElementById(sid),cur=sel.value;
+    sel.innerHTML='<option value="">— escolha a estação —</option>'+
+      ss.map(s=>`<option value="${s.station_id}">${s.station_id} · imagem de ${s.age}s atrás</option>`).join('');
+    sel.value=cur;
+    if(!ss.length)document.getElementById(stid).textContent='nenhuma câmera enviando imagem ainda — abra o detector';
+  });
 }
-function xloadBg(){
-  const st=document.getElementById('xstpick').value,el=document.getElementById('xbgst');
-  if(!st){xbg=null;el.textContent='sem imagem — escolha a câmera acima';xdraw();return;}
+function loadBgInto(pickId,statusId,setter){
+  const st=document.getElementById(pickId).value,el=document.getElementById(statusId);
+  if(!st){setter(null);el.textContent='sem imagem — escolha a câmera acima';return;}
   const im=new Image();
-  im.onload=()=>{xbg=im;el.textContent='✓ imagem ao vivo de '+st;xdraw();};
-  im.onerror=()=>{xbg=null;el.textContent='sem imagem de '+st+' (essa câmera está rodando?)';xdraw();};
+  im.onload=()=>{setter(im);el.textContent='✓ imagem ao vivo de '+st;};
+  im.onerror=()=>{setter(null);el.textContent='sem imagem de '+st+' (essa câmera está rodando?)';};
   im.src='/api/snapshot/'+encodeURIComponent(st)+'?t='+Date.now();
 }
+function xloadBg(){loadBgInto('xstpick','xbgst',im=>{xbg=im;xdraw();});}
+function zloadBg(){loadBgInto('zstpick','zbgst',im=>{zbg=im;draw();});}
 const xcv=document.getElementById('xcv'),xctx=xcv.getContext('2d');
 function xdraw(){
   xctx.clearRect(0,0,xcv.width,xcv.height);
@@ -219,9 +232,13 @@ document.getElementById('xreset').onclick=()=>{xr=null;xdraw();};
 document.getElementById('xstation').oninput=()=>xdraw();
 document.getElementById('xstpick').onchange=()=>{
   document.getElementById('xstation').value=document.getElementById('xstpick').value;xloadBg();};
-document.getElementById('xbgrefresh').onclick=()=>{xloadStations();xloadBg();};
+document.getElementById('xbgrefresh').onclick=()=>{loadSnapStations();xloadBg();};
+document.getElementById('zstpick').onchange=()=>{
+  document.getElementById('zstation').value=document.getElementById('zstpick').value;zloadBg();};
+document.getElementById('zbgrefresh').onclick=()=>{loadSnapStations();zloadBg();};
+setInterval(()=>{if(document.getElementById('zstpick').value)zloadBg();},5000);
 setInterval(()=>{if(document.getElementById('xstpick').value)xloadBg();},5000);
-setInterval(xloadStations,10000);
+setInterval(loadSnapStations,10000);
 async function loadExcl(){
   xall=await j('/api/exclusions');
   document.getElementById('xlist').innerHTML=xall.map(e=>{
@@ -239,7 +256,7 @@ document.getElementById('xsave').onclick=async()=>{
   if(r&&r.ok){xr=null;document.getElementById('xname').value='';loadExcl();toast('exclusão salva — aparece no vídeo em ~4 s');}
   else toast((r&&r.error)||'erro ao salvar');
 };
-loadProfiles();loadBelts();loadZones();loadExcl();xloadStations();draw();
+loadProfiles();loadBelts();loadZones();loadExcl();loadSnapStations();draw();
 const _tb=document.getElementById('theme');
 function _applyTheme(t){document.documentElement.dataset.theme=t;_tb.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
 _applyTheme(localStorage.getItem('tortuga-theme')||'light');
