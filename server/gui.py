@@ -789,7 +789,11 @@ class App:
         self.sb.pose_enabled=(self._pose_est is not None)
         self.pipe=DetectionPipeline(camera,self.det,self._pose_est,
                                     det_size=det_size)
-        self.pipe._ignore = ignore or []
+        self._ignore_file = list(ignore or [])   # do tortuga.config.json
+        self._ignore_dash = []                   # desenhadas pelo gestor no /config
+        self._last_excl_ts = 0.0; self._excl_busy = False
+        self._last_snap_ts = 0.0; self._snap_busy = False
+        self.pipe._ignore = list(self._ignore_file)
         if self.pipe._ignore:
             print(f"  Zonas de exclusao de maquina: {len(self.pipe._ignore)} regiao(oes) ignorada(s)")
         self._fn=0
@@ -812,6 +816,10 @@ class App:
                 self._zones=self._dash.zones()
                 if self._zones:
                     print(f"  {len(self._zones)} zona(s) de risco carregada(s) do dashboard")
+                self._ignore_dash=self._dash.exclusions()
+                if self._ignore_dash:
+                    self.pipe._ignore=list(self._ignore_file)+list(self._ignore_dash)
+                    print(f"  {len(self._ignore_dash)} zona(s) de exclusao carregada(s) do dashboard")
             except Exception as e:
                 print(f"  [aviso] dashboard indisponivel ({e}); seguindo sem ingestão")
 
@@ -910,6 +918,25 @@ class App:
 
         while True:
             self._fn+=1
+            # ── Zonas de exclusao desenhadas no /config: recarrega a cada 4 s, em
+            # thread separada (nao trava o video), para o gestor ver a caixa
+            # laranja mudar AO VIVO enquanto desenha no navegador.
+            if self._dash is not None and time.time()-self._last_excl_ts>4.0:
+                self._last_excl_ts=time.time()
+                if not self._excl_busy:
+                    self._excl_busy=True
+                    def _pull_excl():
+                        try:
+                            ex=self._dash.exclusions()
+                            if ex!=self._ignore_dash:
+                                self._ignore_dash=ex
+                                self.pipe._ignore=list(self._ignore_file)+list(ex)
+                                print(f"  [config] zonas de exclusao: {len(ex)} do dashboard")
+                        except Exception:
+                            pass
+                        finally:
+                            self._excl_busy=False
+                    threading.Thread(target=_pull_excl,daemon=True).start()
             # Multitarefa: se a janela desta camera estiver minimizada, pausa a Fase 2.
             if _user32 is not None:
                 try:
@@ -921,6 +948,27 @@ class App:
                     self.pipe._pose_paused=False
             r=self.pipe.get(self.sb.required())
             f=r["frame"]; hv=r["hv"]; vd=r["vd"]; fps=r["fps"]; dets=r["dets"]
+            # ── Print periodico da camera para o /config (fundo real do desenho
+            # das zonas). Em thread, com JPEG pequeno: nao pesa no video.
+            if self._dash is not None and f is not None and time.time()-self._last_snap_ts>5.0:
+                self._last_snap_ts=time.time()
+                if not self._snap_busy:
+                    self._snap_busy=True
+                    _snapf=f.copy()
+                    def _push_snap(_img=_snapf):
+                        try:
+                            import base64
+                            _h,_w=_img.shape[:2]
+                            if _w>640:
+                                _img=cv2.resize(_img,(640,max(1,int(_h*640.0/_w))))
+                            _ok,_buf=cv2.imencode(".jpg",_img,[int(cv2.IMWRITE_JPEG_QUALITY),60])
+                            if _ok:
+                                self._dash.snapshot(base64.b64encode(_buf.tobytes()).decode())
+                        except Exception:
+                            pass
+                        finally:
+                            self._snap_busy=False
+                    threading.Thread(target=_push_snap,daemon=True).start()
             people   =r.get("people",[])
             pose_risk=r.get("pose_risk",False)
             pose_det =r.get("pose_details",[])

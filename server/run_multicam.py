@@ -54,9 +54,10 @@ def build_cmd(cam, cfg):
             argv += ["--ingest"]
         if not g("pose", True):
             argv += ["--no-pose"]
-        ig = cam.get("ignore")
-        if ig:
-            argv += ["--ignore", json.dumps(ig)]
+    # A zona de exclusao de maquina vale para os DOIS modos (gui.py e headless.py).
+    ig = cam.get("ignore")
+    if ig:
+        argv += ["--ignore", json.dumps(ig)]
     return argv
 
 
@@ -73,7 +74,8 @@ def main():
     cmds = []
     for c in cams:
         cmd = build_cmd(c, cfg); cmds.append((c, cmd))
-        mode = "headless" if (c.get("headless") or cfg.get("defaults", {}).get("headless")) else "gui"
+        _d = cfg.get("defaults", {})
+        mode = "headless" if c.get("headless", _d.get("headless", False)) else "gui"
         print(f"   - {c.get('station_id','?'):8} [{mode:8}] {c.get('name','')}")
         if a.dry_run:
             print("     " + " ".join(cmd))

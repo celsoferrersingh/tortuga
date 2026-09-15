@@ -61,6 +61,20 @@ class DashboardClient:
         q = f"/api/zones?station_id={self.station_id}" if self.station_id else "/api/zones"
         return self._get(q) or []
 
+    def exclusions(self):
+        """Retangulos normalizados [x1,y1,x2,y2] das zonas de exclusao desta estacao."""
+        q = f"/api/exclusions?station_id={self.station_id}" if self.station_id else "/api/exclusions"
+        try:
+            rows = self._get(q) or []
+            return [e["rect"] for e in rows
+                    if e.get("enabled", True) and len(e.get("rect") or []) == 4]
+        except Exception:
+            return []
+
+    def snapshot(self, jpg_b64):
+        """Envia um print desta camera ao dashboard (fundo real do /config)."""
+        return self._post("/api/snapshot", {"station_id": self.station_id, "jpg": jpg_b64})
+
     def _post(self, path, payload):
         data = json.dumps(payload).encode()
         req = urllib.request.Request(self.base + path, data=data, method="POST",

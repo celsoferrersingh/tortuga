@@ -39,6 +39,10 @@ class EventStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, station_id TEXT,
                     level TEXT NOT NULL DEFAULT 'alta', points TEXT NOT NULL DEFAULT '[]',
                     required_epis TEXT NOT NULL DEFAULT '[]', enabled INTEGER NOT NULL DEFAULT 1);
+                CREATE TABLE IF NOT EXISTS exclusions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT 'Maquina',
+                    station_id TEXT, rect TEXT NOT NULL DEFAULT '[]',
+                    enabled INTEGER NOT NULL DEFAULT 1);
                 CREATE TABLE IF NOT EXISTS area_levels (
                     area TEXT PRIMARY KEY, level TEXT NOT NULL, updated_at TEXT);
                 CREATE TABLE IF NOT EXISTS safety_events (
@@ -207,6 +211,47 @@ class EventStore:
         d = dict(r); d["points"] = json.loads(r["points"]); d["required_epis"] = json.loads(r["required_epis"])
         d["enabled"] = bool(r["enabled"]); return d
 
+    # ── zonas de EXCLUSÃO de máquina (retângulos normalizados que FILTRAM detecções) ──
+    # Diferente das zonas de risco: estas não geram alerta, elas SUBTRAEM da cena
+    # (ex.: braço robótico fixo que o detector confundiria com uma pessoa).
+    def add_exclusion(self, name, rect, station_id=None):
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO exclusions (name,station_id,rect,enabled) VALUES (?,?,?,1)",
+                (name or "Maquina", station_id, json.dumps([round(float(v), 4) for v in rect])))
+            self._conn.commit(); return cur.lastrowid
+
+    def list_exclusions(self, station_id=None):
+        with self._lock:
+            if station_id:
+                # inclui as zonas "globais" (station_id vazio = vale para todas as cameras)
+                rows = self._conn.execute(
+                    "SELECT * FROM exclusions WHERE station_id=? OR station_id IS NULL "
+                    "OR station_id='' ORDER BY id", (station_id,)).fetchall()
+            else:
+                rows = self._conn.execute("SELECT * FROM exclusions ORDER BY id").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r); d["rect"] = json.loads(r["rect"]); d["enabled"] = bool(r["enabled"])
+            out.append(d)
+        return out
+
+    def update_exclusion(self, eid, **kw):
+        sets, vals = [], []
+        for k in ("name", "station_id", "enabled"):
+            if k in kw: sets.append(k + "=?"); vals.append(int(kw[k]) if k == "enabled" else kw[k])
+        if "rect" in kw:
+            sets.append("rect=?"); vals.append(json.dumps([round(float(v), 4) for v in kw["rect"]]))
+        if not sets: return
+        vals.append(eid)
+        with self._lock:
+            self._conn.execute("UPDATE exclusions SET " + ",".join(sets) + " WHERE id=?", vals)
+            self._conn.commit()
+
+    def delete_exclusion(self, eid):
+        with self._lock:
+            self._conn.execute("DELETE FROM exclusions WHERE id=?", (eid,)); self._conn.commit()
+
     # classificação manual de risco por ÁREA (override da sugestão da IA)
     def set_area_level(self, area, level):
         with self._lock:
@@ -285,9 +330,25 @@ class EventStore:
                 "name": w["name"], "required_epis": w["required_epis"]})
         return out
 
+    def shifts_with_events_per_worker(self):
+        """{worker_id: nº de TURNOS (operador+dia) com ao menos 1 evento}."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT worker_id, COUNT(*) n FROM (SELECT DISTINCT worker_id, "
+                "substr(timestamp,1,10) d FROM safety_events) GROUP BY worker_id").fetchall()
+        return {r["worker_id"]: int(r["n"]) for r in rows}
+
     def conformity_rate(self):
+        """% de turnos-pessoa SEM nenhuma ocorrência.
+        Conta os TURNOS (operador + dia) que tiveram ao menos um evento — e não a
+        razão eventos/turnos, que quebra quando o mesmo turno acumula vários
+        eventos (ex.: 4 por turno faria a conta ficar negativa)."""
         total = sum(int(w["shifts"]) for w in self.get_roster()) or 1
-        ev = min(self.total_events(), total); return round(100.0*(1-ev/total), 1)
+        with self._lock:
+            com_ev = self._conn.execute(
+                "SELECT COUNT(*) FROM (SELECT DISTINCT worker_id, substr(timestamp,1,10) d "
+                "FROM safety_events)").fetchone()[0]
+        return round(100.0 * (1 - min(int(com_ev), total) / total), 1)
 
     # ── engajamento / gamificação ──
     def last_event_per_worker(self):

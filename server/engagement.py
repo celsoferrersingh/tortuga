@@ -103,7 +103,7 @@ def _badges(conformity, events, streak_days):
     return out
 
 
-def build(summaries, last_events, type_breakdown, now=None):
+def build(summaries, last_events, type_breakdown, now=None, shifts_with_events=None):
     """
     summaries: [{worker_id,name,area,turno,shifts,events,...}]
     last_events: {worker_id: iso_timestamp}
@@ -114,7 +114,11 @@ def build(summaries, last_events, type_breakdown, now=None):
     leaderboard, coaching = [], []
     for w in summaries:
         wid = w["worker_id"]; s = max(int(w["shifts"]), 1); e = int(w["events"])
-        clean = max(0, s - e)
+        # turnos COM evento (nao o nº de eventos): um turno ruim conta uma vez.
+        com = (shifts_with_events or {}).get(wid)
+        if com is None:
+            com = min(e, s)                      # fallback se nao vier do store
+        clean = max(0, s - min(int(com), s))
         conformity = clean / s
         # streak: dias desde o último evento (quanto mais alto, melhor)
         ts = last_events.get(wid)

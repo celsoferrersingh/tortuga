@@ -11,7 +11,7 @@ Uso:
     python headless.py --camera rtsp://...B --station-id EST-PRE --fusion   # angulo B
 """
 from __future__ import annotations
-import argparse, json, os, sys, time
+import argparse, base64, json, os, sys, time
 import cv2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -47,6 +47,8 @@ def main():
     p.add_argument("--profile-refresh", type=float, default=10.0, help="seg p/ reler o operador ativo (QR)")
     p.add_argument("--fusion", action="store_true", help="Modo fusao: reporta presenca; o servidor funde varios angulos")
     p.add_argument("--camera-id", default=None, help="ID unico desta camera (p/ fusao na mesma estacao)")
+    p.add_argument("--ignore", default=None,
+                   help='JSON [[x1,y1,x2,y2],...] normalizado: zonas de exclusao de maquina')
     a = p.parse_args()
 
     src = int(a.camera) if str(a.camera).isdigit() else a.camera
@@ -55,6 +57,28 @@ def main():
     det = PPEDetector(a.model, confidence=a.confidence, device=a.device, preprocess=pre)
     dash = DashboardClient(a.dashboard, station_id=a.station_id, camera_id=a.camera_id)
 
+    # ── Zonas de exclusao de maquina (ex.: braco robotico fixo no quadro) ──
+    # Vem do arquivo de config (--ignore) MAIS as que o gestor desenhou no /config.
+    # Descartam deteccoes cujo CENTRO cai na regiao: a maquina deixa de virar "pessoa".
+    ignore_file = []
+    if a.ignore:
+        try:
+            ignore_file = json.loads(a.ignore)
+        except Exception:
+            print("  [headless] --ignore invalido; seguindo sem zona de arquivo")
+    ignore_dash = dash.exclusions()
+    ignore = list(ignore_file) + list(ignore_dash)
+    if ignore:
+        print(f"  [headless] zonas de exclusao: {len(ignore)} "
+              f"({len(ignore_file)} da config + {len(ignore_dash)} do dashboard)")
+
+    def _ignored(bbox, W, H):
+        if not bbox:
+            return False
+        cx = (bbox[0] + bbox[2]) / 2.0; cy = (bbox[1] + bbox[3]) / 2.0
+        return any(x1 * W <= cx <= x2 * W and y1 * H <= cy <= y2 * H
+                   for (x1, y1, x2, y2) in ignore)
+
     prof = dash.active_profile() or {}
     required = prof.get("required_epis", [])
     if prof.get("confidence"):
@@ -62,7 +86,7 @@ def main():
     print(f"  [headless] operador ativo: {prof.get('worker_id','-')} | EPIs={required} | conf={det.confidence}")
 
     cap = _open(src)
-    last_prof = time.time(); last_log = 0.0; fails = 0; n = 0
+    last_prof = time.time(); last_log = 0.0; last_snap = 0.0; fails = 0; n = 0
     try:
         while True:
             ok, frame = cap.read()
@@ -80,6 +104,9 @@ def main():
                 frame = cv2.resize(frame, (int(w * s), int(h * s)))
 
             dets = det.detect(frame)
+            if ignore:                      # filtra maquinas fixas antes de qualquer decisao
+                _h, _w = frame.shape[:2]
+                dets = [d for d in dets if not _ignored(d.get("bbox"), _w, _h)]
             person = any("person" in d["class_name"].lower() for d in dets)
             missing = PPEDetector.missing_required(dets, required, person)
 
@@ -94,8 +121,22 @@ def main():
                     dash.ingest(type="EPI_AUSENTE", epi=epi, severity=None)
 
             now = time.time()
+            # print periodico da camera -> fundo real para desenhar zonas no /config
+            if now - last_snap >= 5.0:
+                last_snap = now
+                try:
+                    _ok, _buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                    if _ok:
+                        dash.snapshot(base64.b64encode(_buf.tobytes()).decode())
+                except Exception:
+                    pass
             if now - last_prof >= a.profile_refresh:
                 last_prof = now
+                _ex = dash.exclusions()          # o gestor pode desenhar durante a operacao
+                if _ex != ignore_dash:
+                    ignore_dash = _ex
+                    ignore = list(ignore_file) + list(ignore_dash)
+                    print(f"  [headless] zonas de exclusao atualizadas: {len(ignore)}")
                 np_ = dash.active_profile()
                 if np_ and np_.get("worker_id") != prof.get("worker_id"):
                     prof = np_; required = prof.get("required_epis", [])

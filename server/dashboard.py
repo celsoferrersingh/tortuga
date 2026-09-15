@@ -8,7 +8,7 @@ USO:  pip install flask qrcode[pil]
       http://localhost:5005          (gestor)   ·   /config  ·  /checkin
 """
 from __future__ import annotations
-import argparse, json, os, threading, urllib.request
+import argparse, base64, json, os, threading, time, urllib.request
 from flask import Flask, jsonify, render_template, request, Response
 from events_store import EventStore
 from risk_engine import rank_workers, rank_areas, dispersion_report
@@ -130,6 +130,62 @@ def create_app(db_path="data/tortuga.db"):
             store.delete_zone(zid); return jsonify({"ok": True})
         store.update_zone(zid, **request.get_json(force=True)); return jsonify({"ok": True})
 
+    # ── zonas de EXCLUSÃO de máquina: filtram detecções (não geram alerta) ──
+    @app.route("/api/exclusions", methods=["GET", "POST"])
+    def api_exclusions():
+        if request.method == "POST":
+            d = request.get_json(force=True)
+            rect = d.get("rect") or []
+            if len(rect) != 4:
+                return jsonify({"ok": False, "error": "rect deve ser [x1,y1,x2,y2] normalizado"}), 400
+            try:
+                x1, y1, x2, y2 = [max(0.0, min(1.0, float(v))) for v in rect]
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "valores invalidos"}), 400
+            rect = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+            if rect[2] - rect[0] < 0.01 or rect[3] - rect[1] < 0.01:
+                return jsonify({"ok": False, "error": "area muito pequena"}), 400
+            eid = store.add_exclusion(d.get("name"), rect, station_id=d.get("station_id") or None)
+            return jsonify({"ok": True, "id": eid, "rect": rect})
+        return jsonify(store.list_exclusions(request.args.get("station_id")))
+
+    @app.route("/api/exclusions/<int:eid>", methods=["PUT", "DELETE"])
+    def api_exclusion_edit(eid):
+        if request.method == "DELETE":
+            store.delete_exclusion(eid); return jsonify({"ok": True})
+        store.update_exclusion(eid, **request.get_json(force=True)); return jsonify({"ok": True})
+
+    # ── snapshots das cameras: o fundo REAL para desenhar as zonas no /config ──
+    # Cada detector manda um JPEG pequeno a cada poucos segundos. Guardamos so o
+    # ultimo de cada estacao, em memoria (efemero, nao vai para o banco).
+    _snaps = {}
+
+    @app.route("/api/snapshot", methods=["POST"])
+    def api_snapshot_post():
+        d = request.get_json(force=True)
+        st = d.get("station_id"); b64 = d.get("jpg")
+        if not st or not b64:
+            return jsonify({"ok": False, "error": "station_id e jpg obrigatorios"}), 400
+        try:
+            _snaps[st] = {"jpg": base64.b64decode(b64), "ts": time.time()}
+        except Exception:
+            return jsonify({"ok": False, "error": "jpg invalido"}), 400
+        return jsonify({"ok": True})
+
+    @app.route("/api/snapshot/<station_id>")
+    def api_snapshot_get(station_id):
+        s = _snaps.get(station_id)
+        if not s:
+            return ("", 404)
+        return Response(s["jpg"], mimetype="image/jpeg",
+                        headers={"Cache-Control": "no-store"})
+
+    @app.route("/api/snapshots")
+    def api_snapshots():
+        now = time.time()
+        return jsonify([{"station_id": k, "age": round(now - v["ts"], 1)}
+                        for k, v in sorted(_snaps.items())])
+
     # ── risco por ÁREA: sugestão da IA + classificação manual do gestor ──
     @app.route("/api/area-risk", methods=["GET", "POST"])
     def api_area_risk():
@@ -153,7 +209,8 @@ def create_app(db_path="data/tortuga.db"):
     def api_engagement():
         data = engagement.build(store.worker_summaries(),
                                 store.last_event_per_worker(),
-                                store.worker_type_breakdown())
+                                store.worker_type_breakdown(),
+                                shifts_with_events=store.shifts_with_events_per_worker())
         data["team"] = {"streak_critical_days": store.days_since_last_critical(),
                         "conformity": store.conformity_rate()}
         return jsonify(data)

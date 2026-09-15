@@ -88,6 +88,35 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
       </div>
     </div>
   </div>
+
+  <div class="card">
+    <h2>Zonas de exclusão de máquina</h2>
+    <div class="sub">Diferente das zonas de risco: estas <b>não geram alerta</b> — elas <b>removem da cena</b> o que estiver dentro
+      (ex.: um braço robótico fixo que o detector confundiria com uma pessoa). Valem para a detecção de EPI <b>e</b> para a análise de
+      postura. <b>Arraste</b> no quadro para desenhar o retângulo — a caixa laranja “ZONA IGNORADA” aparece no vídeo em até 4 s,
+      sem reiniciar nada.</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="small muted">Câmera (fundo):</span>
+      <select id="xstpick"><option value="">— escolha a estação —</option></select>
+      <button class="ghost" id="xbgrefresh">Atualizar imagem</button>
+      <span class="small muted" id="xbgst">—</span>
+    </div>
+    <div class="grid2">
+      <canvas id="xcv" width="640" height="360"></canvas>
+      <div>
+        <label class="small muted">Nome</label><br>
+        <input type="text" id="xname" placeholder="Ex.: Braço robótico — Fresa 1" style="width:100%">
+        <div class="row"><span class="small muted">Estação:</span>
+          <input type="text" id="xstation" placeholder="EST-FRESA1" style="width:130px">
+          <span class="small muted">(vazio = todas as câmeras)</span></div>
+        <div class="row"><span class="small muted">Retângulo (0–1):</span>
+          <span id="xcoords" style="font-family:ui-monospace,Consolas,monospace;font-size:12px">—</span></div>
+        <div class="row"><button id="xsave">Salvar exclusão</button><button class="ghost" id="xreset">Limpar</button></div>
+        <table style="margin-top:10px"><thead><tr><th>Nome</th><th>Estação</th><th>Área</th><th></th></tr></thead>
+          <tbody id="xlist"></tbody></table>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -139,11 +168,82 @@ document.getElementById('zsave').onclick=async()=>{
   await j('/api/zones','POST',{name,level,points:pts,station_id:station,required_epis:epis});
   pts=[];draw();document.getElementById('zname').value='';loadZones();toast('zona salva');
 };
-loadProfiles();loadBelts();loadZones();draw();
+// ── Zonas de EXCLUSAO de maquina (retangulo por arrasto) ──
+let xr=null,xdrag=null,xall=[],xbg=null;
+async function xloadStations(){
+  const ss=await j('/api/snapshots');
+  const sel=document.getElementById('xstpick'),cur=sel.value;
+  sel.innerHTML='<option value="">— escolha a estação —</option>'+
+    ss.map(s=>`<option value="${s.station_id}">${s.station_id} · imagem de ${s.age}s atrás</option>`).join('');
+  sel.value=cur;
+  if(!ss.length)document.getElementById('xbgst').textContent='nenhuma câmera enviando imagem ainda — abra o detector';
+}
+function xloadBg(){
+  const st=document.getElementById('xstpick').value,el=document.getElementById('xbgst');
+  if(!st){xbg=null;el.textContent='sem imagem — escolha a câmera acima';xdraw();return;}
+  const im=new Image();
+  im.onload=()=>{xbg=im;el.textContent='✓ imagem ao vivo de '+st;xdraw();};
+  im.onerror=()=>{xbg=null;el.textContent='sem imagem de '+st+' (essa câmera está rodando?)';xdraw();};
+  im.src='/api/snapshot/'+encodeURIComponent(st)+'?t='+Date.now();
+}
+const xcv=document.getElementById('xcv'),xctx=xcv.getContext('2d');
+function xdraw(){
+  xctx.clearRect(0,0,xcv.width,xcv.height);
+  // fundo: o frame REAL da camera (esticado ao canvas -> as coords normalizadas batem)
+  if(xbg) xctx.drawImage(xbg,0,0,xcv.width,xcv.height);
+  xctx.strokeStyle=xbg?'rgba(255,255,255,.20)':'#E5E5EA';xctx.lineWidth=1;
+  for(let x=0;x<xcv.width;x+=40){xctx.beginPath();xctx.moveTo(x,0);xctx.lineTo(x,xcv.height);xctx.stroke();}
+  for(let y=0;y<xcv.height;y+=40){xctx.beginPath();xctx.moveTo(0,y);xctx.lineTo(xcv.width,y);xctx.stroke();}
+  const st=document.getElementById('xstation').value.trim();
+  xall.filter(e=>!st||!e.station_id||e.station_id===st).forEach(e=>{
+    const [a,b,c,d]=e.rect;
+    xctx.fillStyle='rgba(255,149,0,.14)';xctx.fillRect(a*xcv.width,b*xcv.height,(c-a)*xcv.width,(d-b)*xcv.height);
+    xctx.strokeStyle='#FF9500';xctx.lineWidth=1.5;xctx.strokeRect(a*xcv.width,b*xcv.height,(c-a)*xcv.width,(d-b)*xcv.height);
+  });
+  if(xr){
+    const [a,b,c,d]=xr;
+    xctx.fillStyle='rgba(255,149,0,.30)';xctx.fillRect(a*xcv.width,b*xcv.height,(c-a)*xcv.width,(d-b)*xcv.height);
+    xctx.strokeStyle='#FF9500';xctx.lineWidth=2.5;xctx.strokeRect(a*xcv.width,b*xcv.height,(c-a)*xcv.width,(d-b)*xcv.height);
+    xctx.fillStyle='#B26B00';xctx.font='bold 12px -apple-system,Segoe UI,sans-serif';
+    xctx.fillText('ZONA IGNORADA',a*xcv.width+6,b*xcv.height+16);
+  }
+  document.getElementById('xcoords').textContent=xr?('['+xr.map(v=>v.toFixed(2)).join(', ')+']'):'—';
+}
+const xpos=e=>{const r=xcv.getBoundingClientRect();
+  return [Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))];};
+xcv.onmousedown=e=>{xdrag=xpos(e);xr=null;xdraw();};
+xcv.onmousemove=e=>{if(!xdrag)return;const p=xpos(e);
+  xr=[Math.min(xdrag[0],p[0]),Math.min(xdrag[1],p[1]),Math.max(xdrag[0],p[0]),Math.max(xdrag[1],p[1])];xdraw();};
+window.addEventListener('mouseup',()=>{xdrag=null;});
+document.getElementById('xreset').onclick=()=>{xr=null;xdraw();};
+document.getElementById('xstation').oninput=()=>xdraw();
+document.getElementById('xstpick').onchange=()=>{
+  document.getElementById('xstation').value=document.getElementById('xstpick').value;xloadBg();};
+document.getElementById('xbgrefresh').onclick=()=>{xloadStations();xloadBg();};
+setInterval(()=>{if(document.getElementById('xstpick').value)xloadBg();},5000);
+setInterval(xloadStations,10000);
+async function loadExcl(){
+  xall=await j('/api/exclusions');
+  document.getElementById('xlist').innerHTML=xall.map(e=>{
+    const [a,b,c,d]=e.rect,area=Math.round((c-a)*(d-b)*100);
+    return `<tr><td>${e.name}</td><td class="small muted">${e.station_id||'todas'}</td><td class="small muted">${area}% do quadro</td><td><button class="ghost" onclick="delExcl(${e.id})">remover</button></td></tr>`;
+  }).join('')||'<tr><td colspan="4" class="muted small">Nenhuma zona de exclusão ainda.</td></tr>';
+  xdraw();
+}
+async function delExcl(id){await j('/api/exclusions/'+id,'DELETE');loadExcl();toast('exclusão removida');}
+document.getElementById('xsave').onclick=async()=>{
+  if(!xr){toast('arraste no quadro para desenhar o retângulo');return;}
+  const name=document.getElementById('xname').value||'Máquina';
+  const station=document.getElementById('xstation').value.trim()||null;
+  const r=await j('/api/exclusions','POST',{name,rect:xr,station_id:station});
+  if(r&&r.ok){xr=null;document.getElementById('xname').value='';loadExcl();toast('exclusão salva — aparece no vídeo em ~4 s');}
+  else toast((r&&r.error)||'erro ao salvar');
+};
+loadProfiles();loadBelts();loadZones();loadExcl();xloadStations();draw();
 const _tb=document.getElementById('theme');
 function _applyTheme(t){document.documentElement.dataset.theme=t;_tb.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
 _applyTheme(localStorage.getItem('tortuga-theme')||'light');
-_tb.onclick=()=>{const c=document.documentElement.dataset.theme==='dark'?'light':'dark';localStorage.setItem('tortuga-theme',c);_applyTheme(c);draw();};
+_tb.onclick=()=>{const c=document.documentElement.dataset.theme==='dark'?'light':'dark';localStorage.setItem('tortuga-theme',c);_applyTheme(c);draw();xdraw();};
 </script>
 </body>
 </html>
