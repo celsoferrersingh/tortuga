@@ -81,8 +81,11 @@ def main():
 
     prof = dash.active_profile() or {}
     required = prof.get("required_epis", [])
-    if prof.get("confidence"):
-        det.confidence = float(prof["confidence"])
+    # limiar = calibracao da ESTACAO (nao do operador); se nao houver, usa o --confidence
+    station_conf = dash.station_confidence()
+    if station_conf is not None:
+        det.confidence = float(station_conf)
+        print(f"  [headless] calibracao da estacao {a.station_id}: confianca {station_conf:.0%}")
     dash.set_confidence(det.confidence)
     print(f"  [headless] operador ativo: {prof.get('worker_id','-')} | EPIs={required} | conf={det.confidence}")
 
@@ -141,9 +144,12 @@ def main():
                 np_ = dash.active_profile()
                 if np_ and np_.get("worker_id") != prof.get("worker_id"):
                     prof = np_; required = prof.get("required_epis", [])
-                    if prof.get("confidence"): det.confidence = float(prof["confidence"])
-                    dash.set_confidence(det.confidence)
                     print(f"  [headless] novo operador ativo: {prof.get('worker_id')} | EPIs={required}")
+                _sc = dash.station_confidence()
+                if _sc is not None and _sc != station_conf:
+                    station_conf = _sc; det.confidence = float(_sc)
+                    print(f"  [headless] calibracao da estacao atualizada: confianca {_sc:.0%}")
+                dash.set_confidence(det.confidence)
             if now - last_log >= 15.0:
                 last_log = now
                 print(f"  [headless] {a.station_id}: {n} frames, {len(dets)} det no ultimo, pessoa={person}")

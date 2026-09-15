@@ -1,5 +1,6 @@
 @echo off
-REM Tortuga - Ajusta a confianca minima do YOLO (padrao 45%). Depois reinicie o run_demo.
+REM Tortuga - Calibra a confianca minima do YOLO POR ESTACAO (camera).
+REM Aplica em ~4s, sem reiniciar. Subir o limiar tende a AUMENTAR as violacoes.
 cd /d "C:\tortuga\server"
 set /p CONF="Confianca em %% (Enter = 45): "
 if "%CONF%"=="" set CONF=45

@@ -805,19 +805,27 @@ class App:
 
         # ── Fase 3: integração com o dashboard (perfil ativo + zonas + ingestão) ──
         self._dash=None; self._zones=[]; self._last_ingest_ts=0.0; self._was_violating=False
+        self._last_station_conf=None
         if ingest and dashboard_url and station_id:
             try:
                 from dashboard_client import DashboardClient
                 self._dash=DashboardClient(dashboard_url, station_id=station_id, camera_id=camera_id)
                 prof=self._dash.active_profile()
                 if prof:
-                    # aplica os EPIs e a confiança do PERFIL ativo (definido pelo QR)
+                    # do PERFIL vem o QUE monitorar (EPIs). O limiar NAO vem daqui:
+                    # ele e calibracao do instrumento e mora na ESTACAO (ver abaixo).
                     for e in list(self.sb.states):
                         self.sb.states[e]=(e in prof.get("required_epis", []))
-                    cf=float(prof.get("confidence", confidence))
-                    self.det.confidence=self.sb.confidence=cf
                     print(f"  Perfil ativo na {station_id}: {prof['worker_id']} | "
-                          f"EPIs={prof.get('required_epis')} | conf={cf}")
+                          f"EPIs={prof.get('required_epis')}")
+                # Limiar de confianca = calibracao da ESTACAO (arranjo optico).
+                # Assim todos os operadores daquela camera sao medidos com o MESMO
+                # instrumento — condicao para a comparacao entre eles ser valida.
+                _sc=self._dash.station_confidence()
+                self._last_station_conf=_sc
+                if _sc is not None:
+                    self.det.confidence=self.sb.confidence=float(_sc)
+                    print(f"  Calibracao da estacao {station_id}: confianca {_sc:.0%}")
                 self._zones=self._dash.zones()
                 if self._zones:
                     print(f"  {len(self._zones)} zona(s) de risco carregada(s) do dashboard")
@@ -939,6 +947,13 @@ class App:
                                 self._ignore_dash=ex
                                 self.pipe._ignore=list(self._ignore_file)+list(ex)
                                 print(f"  [config] zonas de exclusao: {len(ex)} do dashboard")
+                            # calibracao da estacao: aplica SO quando o valor remoto muda,
+                            # para nao anular o ajuste local do slider durante um teste.
+                            sc=self._dash.station_confidence()
+                            if sc is not None and sc!=self._last_station_conf:
+                                self._last_station_conf=sc
+                                self.det.confidence=self.sb.confidence=float(sc)
+                                print(f"  [config] calibracao da estacao: confianca {sc:.0%}")
                         except Exception:
                             pass
                         finally:

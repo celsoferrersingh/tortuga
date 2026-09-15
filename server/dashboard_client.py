@@ -26,6 +26,17 @@ class DashboardClient:
         threading.Thread(target=self._post, args=("/api/belt-clear", {"station_id": self.station_id}), daemon=True).start()
         return True
 
+    def station_confidence(self):
+        """Limiar calibrado para ESTA estacao (None = usar o valor local/CLI)."""
+        if not self.station_id:
+            return None
+        try:
+            r = self._get(f"/api/station-confidence?station_id={self.station_id}") or {}
+            c = r.get("confidence")
+            return None if c is None else float(c)
+        except Exception:
+            return None
+
     def set_confidence(self, c):
         """Limiar do YOLO em uso — enviado junto de cada evento (auditoria/calibracao)."""
         self.confidence = None if c is None else round(float(c), 3)

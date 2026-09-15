@@ -155,6 +155,28 @@ def create_app(db_path="data/tortuga.db"):
             store.delete_exclusion(eid); return jsonify({"ok": True})
         store.update_exclusion(eid, **request.get_json(force=True)); return jsonify({"ok": True})
 
+    # ── calibração do detector POR ESTAÇÃO (limiar do YOLO) ──
+    # Fica na estação (arranjo óptico), não no operador: assim todos que passam
+    # pela mesma câmera são medidos com o mesmo instrumento.
+    @app.route("/api/stations", methods=["GET", "POST"])
+    def api_stations():
+        if request.method == "POST":
+            d = request.get_json(force=True)
+            st = d.get("station_id")
+            if not st:
+                return jsonify({"ok": False, "error": "station_id obrigatorio"}), 400
+            try:
+                c = store.set_station_confidence(st, d.get("confidence"))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "confidence invalida"}), 400
+            return jsonify({"ok": True, "station_id": st, "confidence": c})
+        return jsonify(store.list_stations())
+
+    @app.route("/api/station-confidence")
+    def api_station_confidence():
+        st = request.args.get("station_id")
+        return jsonify({"station_id": st, "confidence": store.get_station_confidence(st)})
+
     # ── snapshots das cameras: o fundo REAL para desenhar as zonas no /config ──
     # Cada detector manda um JPEG pequeno a cada poucos segundos. Guardamos so o
     # ultimo de cada estacao, em memoria (efemero, nao vai para o banco).

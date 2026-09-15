@@ -43,6 +43,8 @@ class EventStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT 'Maquina',
                     station_id TEXT, rect TEXT NOT NULL DEFAULT '[]',
                     enabled INTEGER NOT NULL DEFAULT 1);
+                CREATE TABLE IF NOT EXISTS stations (
+                    station_id TEXT PRIMARY KEY, confidence REAL, updated_at TEXT);
                 CREATE TABLE IF NOT EXISTS area_levels (
                     area TEXT PRIMARY KEY, level TEXT NOT NULL, updated_at TEXT);
                 CREATE TABLE IF NOT EXISTS safety_events (
@@ -217,6 +219,40 @@ class EventStore:
     def _zone(r):
         d = dict(r); d["points"] = json.loads(r["points"]); d["required_epis"] = json.loads(r["required_epis"])
         d["enabled"] = bool(r["enabled"]); return d
+
+    # ── CALIBRAÇÃO por ESTAÇÃO (limiar do YOLO) ──────────────────────────────
+    # O limiar é propriedade do ARRANJO ÓPTICO (câmera, luz, distância), não da
+    # pessoa. Mantê-lo por estação garante que todos os operadores que passam por
+    # aquela câmera sejam medidos com o MESMO instrumento — condição para que a
+    # comparação entre operadores (teste de hipóteses contra λ0) seja válida.
+    def get_station_confidence(self, station_id):
+        if not station_id:
+            return None
+        with self._lock:
+            r = self._conn.execute("SELECT confidence FROM stations WHERE station_id=?",
+                                   (station_id,)).fetchone()
+        return (float(r["confidence"]) if r and r["confidence"] is not None else None)
+
+    def set_station_confidence(self, station_id, confidence):
+        c = None if confidence is None else max(0.05, min(0.95, float(confidence)))
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO stations (station_id,confidence,updated_at) VALUES (?,?,?) "
+                "ON CONFLICT(station_id) DO UPDATE SET confidence=excluded.confidence, "
+                "updated_at=excluded.updated_at",
+                (station_id, c, datetime.now().isoformat()))
+            self._conn.commit()
+        return c
+
+    def list_stations(self):
+        """Estações conhecidas: as calibradas + as que já geraram eventos."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.station_id, s.confidence, s.updated_at FROM stations s "
+                "UNION SELECT DISTINCT e.station_id, NULL, NULL FROM safety_events e "
+                "WHERE e.station_id IS NOT NULL AND e.station_id NOT IN (SELECT station_id FROM stations) "
+                "ORDER BY 1").fetchall()
+        return [{"station_id": r[0], "confidence": r[1], "updated_at": r[2]} for r in rows]
 
     # ── zonas de EXCLUSÃO de máquina (retângulos normalizados que FILTRAM detecções) ──
     # Diferente das zonas de risco: estas não geram alerta, elas SUBTRAEM da cena

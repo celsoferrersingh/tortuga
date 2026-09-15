@@ -45,6 +45,9 @@ button.ghost{background:var(--surface);border:1px solid var(--border);color:var(
 .lvl{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:600}
 .l-critica{background:rgba(255,59,48,.12);color:#C81E14}.l-alta{background:rgba(255,149,0,.14);color:#B26B00}.l-informativa{background:rgba(0,113,227,.12);color:#0058B0}
 .grid2{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}
+.warnbox{border:1px solid #F0D8A8;background:#FDF6E9;border-radius:var(--radius);padding:11px 14px;
+ margin:10px 0 14px;font-size:13px;line-height:1.55}
+html[data-theme="dark"] .warnbox{border-color:#5A4520;background:#2A2210}
 canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);cursor:crosshair;width:100%;display:block}
 .muted{color:var(--muted)} .small{font-size:12px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
@@ -60,8 +63,8 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
 <div class="wrap">
   <div class="card">
     <h2>Perfis de operador</h2>
-    <div class="sub">Cada perfil define os EPIs monitorados e a confiança mínima do YOLO. O QR no início do turno amarra o operador ao cinto.</div>
-    <table><thead><tr><th>ID</th><th>Área · Turno</th><th>EPIs monitorados</th><th>Confiança YOLO</th><th></th></tr></thead><tbody id="profiles"></tbody></table>
+    <div class="sub">Cada perfil define <b>quais EPIs</b> são monitorados para aquele operador. O QR no início do turno amarra o operador ao cinto. A <b>sensibilidade do detector</b> não fica aqui — é calibração da câmera (veja “Calibração da detecção”, abaixo).</div>
+    <table><thead><tr><th>ID</th><th>Área · Turno</th><th>EPIs monitorados</th><th></th></tr></thead><tbody id="profiles"></tbody></table>
   </div>
   <div class="grid2">
     <div class="card"><h2>Cintos (ESP32)</h2>
@@ -73,6 +76,24 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
       <table><thead><tr><th>Nome</th><th>Nível</th><th>Estação</th><th></th></tr></thead><tbody id="zones"></tbody></table>
     </div>
   </div>
+  <div class="card">
+    <h2>Calibração da detecção (por estação)</h2>
+    <div class="sub">A confiança mínima do YOLO é <b>calibração da câmera</b> (iluminação, distância, ângulo) — não do trabalhador.
+      Todos os operadores que passam pela mesma estação são medidos com o <b>mesmo limiar</b>, que é o que torna a comparação
+      estatística entre eles válida. Cada evento guarda o limiar usado, e a mudança fica registrada na auditoria.</div>
+    <div class="warnbox">
+      <b>⚠ Atenção ao sentido do ajuste.</b> O modelo é “só-positivos”: se o EPI <b>não for detectado</b>, conta como ausente.
+      Então <b>subir</b> a confiança tende a <b>aumentar</b> as violações registradas (o detector deixa de reconhecer EPIs
+      legítimos), e <b>baixar</b> tende a <b>mascarar</b> violações reais. Mudar o limiar <b>altera a taxa observada (λ₀)</b> —
+      depois de recalibrar, considere reiniciar a janela de base do modelo preditivo.
+    </div>
+    <table><thead><tr><th>Estação</th><th>Confiança mínima</th><th>Atualizado</th><th></th></tr></thead>
+      <tbody id="stations"></tbody></table>
+    <div class="row"><span class="small muted">Adicionar estação:</span>
+      <input type="text" id="stname" placeholder="EST-FRESA1" style="width:150px">
+      <button class="ghost" id="stadd">Adicionar</button></div>
+  </div>
+
   <div class="card">
     <h2>Desenhar nova zona de risco</h2>
     <div class="sub">Zona de risco <b>gera alerta</b> quando alguém entra — é o oposto da zona de exclusão (logo abaixo), que
@@ -137,13 +158,11 @@ async function loadProfiles(){
     const ck=EPIS.map(([k,lbl])=>`<label class="epi"><input type="checkbox" data-w="${p.worker_id}" value="${k}" ${p.required_epis.includes(k)?'checked':''}>${lbl}</label>`).join('');
     return `<tr><td><b>${p.worker_id}</b><div class="small muted">${p.name}</div></td>
       <td class="small">${p.area}<div class="muted">Turno ${p.turno}</div></td><td>${ck}</td>
-      <td><input type="range" min="0.1" max="0.9" step="0.05" value="${p.confidence}" data-cw="${p.worker_id}" oninput="this.nextElementSibling.textContent=Math.round(this.value*100)+'%'"><span class="small">${Math.round(p.confidence*100)}%</span></td>
       <td><button onclick="saveProfile('${p.worker_id}')">Salvar</button></td></tr>`;}).join('');
 }
 async function saveProfile(wid){
   const epis=[...document.querySelectorAll(`input[data-w="${wid}"]:checked`)].map(c=>c.value);
-  const conf=parseFloat(document.querySelector(`input[data-cw="${wid}"]`).value);
-  await j('/api/profiles/'+wid,'PUT',{required_epis:epis,confidence:conf}); toast(wid+' atualizado');
+  await j('/api/profiles/'+wid,'PUT',{required_epis:epis}); toast(wid+' atualizado');
 }
 async function loadBelts(){
   const [belts,ps]=await Promise.all([j('/api/belts'),j('/api/profiles')]);
@@ -256,7 +275,29 @@ document.getElementById('xsave').onclick=async()=>{
   if(r&&r.ok){xr=null;document.getElementById('xname').value='';loadExcl();toast('exclusão salva — aparece no vídeo em ~4 s');}
   else toast((r&&r.error)||'erro ao salvar');
 };
-loadProfiles();loadBelts();loadZones();loadExcl();loadSnapStations();draw();
+async function loadStations(){
+  const ss=await j('/api/stations');
+  document.getElementById('stations').innerHTML=ss.map(s=>{
+    const pct=s.confidence==null?'usa o padrão do detector':Math.round(s.confidence*100)+'%';
+    return `<tr><td><b>${s.station_id}</b></td>
+      <td><input type="range" min="0.1" max="0.9" step="0.05" value="${s.confidence==null?0.45:s.confidence}" data-st="${s.station_id}"
+        oninput="this.nextElementSibling.textContent=Math.round(this.value*100)+'%'"><span class="small">${pct}</span></td>
+      <td class="small muted">${s.updated_at?s.updated_at.replace('T',' ').slice(0,16):'—'}</td>
+      <td><button class="ghost" onclick="saveStation('${s.station_id}')">salvar</button></td></tr>`;
+  }).join('')||'<tr><td colspan="4" class="muted small">Nenhuma estação ainda — aparece aqui quando uma câmera roda, ou adicione abaixo.</td></tr>';
+}
+async function saveStation(st){
+  const v=parseFloat(document.querySelector(`input[data-st="${st}"]`).value);
+  await j('/api/stations','POST',{station_id:st,confidence:v});
+  loadStations();toast(st+' calibrada em '+Math.round(v*100)+'% — o detector aplica em ~4 s');
+}
+document.getElementById('stadd').onclick=async()=>{
+  const st=document.getElementById('stname').value.trim();
+  if(!st){toast('informe o ID da estação');return;}
+  await j('/api/stations','POST',{station_id:st,confidence:0.45});
+  document.getElementById('stname').value='';loadStations();toast('estação '+st+' adicionada');
+};
+loadProfiles();loadBelts();loadZones();loadExcl();loadStations();loadSnapStations();draw();
 const _tb=document.getElementById('theme');
 function _applyTheme(t){document.documentElement.dataset.theme=t;_tb.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
 _applyTheme(localStorage.getItem('tortuga-theme')||'light');
