@@ -243,7 +243,8 @@ def create_app(db_path="data/tortuga.db"):
         sev = d.get("severity") or sev_policy.classify(d["type"], altura=d.get("altura", False))
         store.add_event(worker_id=wid, type=d["type"], severity=sev, epi=d.get("epi"),
                         area=d.get("area") or prof.get("area"),
-                        turno=d.get("turno") or prof.get("turno"), station_id=d.get("station_id"))
+                        turno=d.get("turno") or prof.get("turno"), station_id=d.get("station_id"),
+                        confidence=d.get("confidence"))
         # estado pendente do cinto (modelo PULL): alerta de campo fica disponível
         # para o ESP consultar via /api/belt-status (expira sozinho por TTL).
         if sev_policy.is_field(sev) and d.get("station_id"):
@@ -291,7 +292,8 @@ def create_app(db_path="data/tortuga.db"):
             if fusion_coord.alertable(station, epi):
                 s = sev_policy.classify("EPI_AUSENTE")
                 store.add_event(worker_id=wid, type="EPI_AUSENTE", severity=s, epi=epi,
-                                area=prof.get("area"), turno=prof.get("turno"), station_id=station)
+                                area=prof.get("area"), turno=prof.get("turno"), station_id=station,
+                                confidence=d.get("confidence"))
                 dev = store.belt_for_station(station)
                 if dev and sev_policy.is_field(s):
                     msg = _esp_msg("EPI_AUSENTE", epi)

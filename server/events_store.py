@@ -48,7 +48,7 @@ class EventStore:
                 CREATE TABLE IF NOT EXISTS safety_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, worker_id TEXT NOT NULL, station_id TEXT,
                     area TEXT, turno TEXT, type TEXT NOT NULL, epi TEXT, severity TEXT NOT NULL,
-                    timestamp TEXT NOT NULL);
+                    timestamp TEXT NOT NULL, confidence REAL);
                 CREATE INDEX IF NOT EXISTS idx_ev_worker ON safety_events(worker_id);
                 CREATE INDEX IF NOT EXISTS idx_ev_time ON safety_events(timestamp);
                 CREATE INDEX IF NOT EXISTS idx_ev_sev ON safety_events(severity);
@@ -59,6 +59,13 @@ class EventStore:
             # migração p/ bancos já existentes: adiciona esp32_url em belts se faltar
             try:
                 self._conn.execute("ALTER TABLE belts ADD COLUMN esp32_url TEXT")
+            except Exception:
+                pass
+            # migração: registra o LIMIAR DE CONFIANÇA usado na medição de cada evento.
+            # O limiar muda a taxa observada (λ̂), entao guarda-lo junto do evento
+            # permite auditar e segmentar a analise por periodo de calibracao.
+            try:
+                self._conn.execute("ALTER TABLE safety_events ADD COLUMN confidence REAL")
             except Exception:
                 pass
             self._conn.commit()
@@ -269,14 +276,20 @@ class EventStore:
         return {r["area"]: r["level"] for r in rows}
 
     # eventos
-    def add_event(self, worker_id, type, severity, epi=None, area=None, turno=None, station_id=None, timestamp=None):
+    def add_event(self, worker_id, type, severity, epi=None, area=None, turno=None, station_id=None,
+                  timestamp=None, confidence=None):
+        """confidence = limiar do YOLO usado NESTA medição. Guardado junto do evento
+        porque o limiar altera a taxa observada (λ̂): sem ele não há como auditar
+        nem comparar períodos calibrados de forma diferente."""
         ts = timestamp or datetime.now().isoformat()
+        conf = None if confidence is None else round(float(confidence), 3)
         with self._lock:
-            self._conn.execute("""INSERT INTO safety_events (worker_id,station_id,area,turno,type,epi,severity,timestamp)
-                VALUES (?,?,?,?,?,?,?,?)""", (worker_id, station_id, area, turno, type, epi, severity, ts))
+            self._conn.execute("""INSERT INTO safety_events (worker_id,station_id,area,turno,type,epi,severity,timestamp,confidence)
+                VALUES (?,?,?,?,?,?,?,?,?)""", (worker_id, station_id, area, turno, type, epi, severity, ts, conf))
             # trilha de auditoria append-only, encadeada por hash (tamper-evident)
             payload = json.dumps({"worker_id": worker_id, "station_id": station_id, "area": area,
-                "turno": turno, "type": type, "epi": epi, "severity": severity, "event_ts": ts},
+                "turno": turno, "type": type, "epi": epi, "severity": severity, "event_ts": ts,
+                "confidence": conf},
                 sort_keys=True, ensure_ascii=False)
             row = self._conn.execute("SELECT hash FROM audit_chain ORDER BY seq DESC LIMIT 1").fetchone()
             prev = row["hash"] if row else "GENESIS"

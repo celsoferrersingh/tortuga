@@ -26,6 +26,10 @@ class DashboardClient:
         threading.Thread(target=self._post, args=("/api/belt-clear", {"station_id": self.station_id}), daemon=True).start()
         return True
 
+    def set_confidence(self, c):
+        """Limiar do YOLO em uso — enviado junto de cada evento (auditoria/calibracao)."""
+        self.confidence = None if c is None else round(float(c), 3)
+
     def observe(self, present, person):
         """Fusão multi-câmera: reporta o que ESTA câmera vê; o servidor decide."""
         now = time.time()
@@ -33,7 +37,8 @@ class DashboardClient:
             return False
         self._last_obs = now
         payload = {"station_id": self.station_id, "camera_id": self.camera_id,
-                   "present": list(present or []), "person": bool(person)}
+                   "present": list(present or []), "person": bool(person),
+                   "confidence": getattr(self, "confidence", None)}
         threading.Thread(target=self._post, args=("/api/observe", payload), daemon=True).start()
         return True
 
@@ -44,7 +49,8 @@ class DashboardClient:
             return False
         self._last[key] = now
         payload = {"type": type, "epi": epi, "severity": severity,
-                   "station_id": self.station_id, "worker_id": worker_id}
+                   "station_id": self.station_id, "worker_id": worker_id,
+                   "confidence": getattr(self, "confidence", None)}
         threading.Thread(target=self._post, args=("/api/ingest", payload), daemon=True).start()
         return True
 

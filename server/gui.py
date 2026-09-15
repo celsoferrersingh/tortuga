@@ -888,6 +888,8 @@ class App:
     def _ingest_events(self, vd, people):
         """Envia ao dashboard os eventos reais detectados (o client faz throttle)."""
         try:
+            # o limiar pode ter sido mexido no slider: grava o valor em vigor AGORA
+            self._dash.set_confidence(self.det.confidence)
             sent=False
             for v in vd:
                 if "AUSENTE" in v:

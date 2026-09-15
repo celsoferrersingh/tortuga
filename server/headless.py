@@ -83,6 +83,7 @@ def main():
     required = prof.get("required_epis", [])
     if prof.get("confidence"):
         det.confidence = float(prof["confidence"])
+    dash.set_confidence(det.confidence)
     print(f"  [headless] operador ativo: {prof.get('worker_id','-')} | EPIs={required} | conf={det.confidence}")
 
     cap = _open(src)
@@ -141,6 +142,7 @@ def main():
                 if np_ and np_.get("worker_id") != prof.get("worker_id"):
                     prof = np_; required = prof.get("required_epis", [])
                     if prof.get("confidence"): det.confidence = float(prof["confidence"])
+                    dash.set_confidence(det.confidence)
                     print(f"  [headless] novo operador ativo: {prof.get('worker_id')} | EPIs={required}")
             if now - last_log >= 15.0:
                 last_log = now
