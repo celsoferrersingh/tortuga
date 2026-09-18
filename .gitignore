@@ -29,8 +29,9 @@ server/runs_oculos/
 Fotos spi/
 _backups/
 
-# Config real com CREDENCIAIS das cameras — NAO versionar (versione so o .example)
-server/tortuga.config.json
+# Config real das cameras: VERSIONADA por decisao da SPI (repositorio privado),
+# para que a configuracao de producao seja recuperavel se a maquina falhar.
+# Contem credenciais — nao tornar este repositorio publico.
 
 # O site tem repositorio proprio (tortuga-site / GitHub Pages) — nao versionar aqui
 site/
