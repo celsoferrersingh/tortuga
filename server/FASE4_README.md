@@ -126,6 +126,63 @@ Ative com `--fusion` (gui.py ou headless.py) usando o **mesmo `station_id`** em
 ]
 ```
 
+## 9. Zonas de exclusão de máquina (falso positivo estrutural)
+
+Apontamento de campo: um **braço robótico fixo** era detectado como pessoa,
+contaminando EPI *e* postura. Zonas de exclusão são retângulos normalizados
+`[x1,y1,x2,y2]` que **subtraem** a região da análise (o oposto da zona de risco,
+que gera alerta). Valem para `gui.py` **e** `headless.py`.
+
+O gestor desenha em `/config` **sobre o quadro real da câmera** (cada detector
+envia um JPEG a cada ~5 s, que vira o fundo do canvas). A mudança chega ao
+detector em ~4 s, sem reiniciar. Também aceita o caminho por arquivo:
+
+```json
+{ "station_id": "EST-FRESA2", "ignore": [[0.52, 0.26, 0.88, 1.0]] }
+```
+
+## 10. Calibração do detector por ESTAÇÃO
+
+O limiar de confiança é propriedade do **arranjo óptico**, não do trabalhador —
+fica na estação, não no perfil. Todos os operadores daquela câmera são medidos
+com o **mesmo instrumento**, condição para o teste de hipóteses contra λ0 ser
+válido. Cada evento grava o limiar usado (campo `confidence`, também na trilha
+de auditoria).
+
+> Atenção ao sentido: modelo só-positivos ⇒ EPI não detectado = ausente. **Subir**
+> o limiar **aumenta** as violações registradas; **baixar** mascara violações reais.
+
+```
+python set_confidence.py --list
+python set_confidence.py --value 0.45 [--station EST-FRESA1]
+```
+
+## 11. Instrumentação de diagnóstico de campo
+
+Implantação real quebra por rede, não por modelo. Utilitários criados na
+metaindústria (reduzem o diagnóstico de horas para minutos):
+
+| Ferramenta | Para que serve |
+|---|---|
+| `check_rtsp.bat` | A máquina alcança a câmera? A porta 554 responde? |
+| `diag_rtsp.py --ip X --compare` | Compara stream principal × secundário (tempo e resolução). |
+| `diag_rtsp.py --ips A,B,C` | Salva um print de cada câmera em `cams_preview/` para identificar qual é qual. |
+| `find_cams.bat` | Varre a sub-rede procurando câmeras (porta 554 aberta). |
+
+**Achados que viraram requisito:** endereços de câmera **mudam entre visitas**
+(um deles deixou de existir); câmeras de **lotes diferentes usam senhas
+diferentes** (a config suporta credencial por câmera); e o **stream principal**
+em 1080p é instável sobre Wi-Fi — como a inferência reduz para 640 px, o
+**secundário** entrega a mesma qualidade útil com fração da banda.
+
+## 12. Cinto em rede corporativa (isolamento de clientes)
+
+O ESP conectava ao Wi-Fi, mas o servidor não o alcançava: a rede isola clientes
+entre si. Solução sem depender da TI do cliente: o PC publica um **ponto de
+acesso próprio em 2,4 GHz** só para o cinto, enquanto segue na rede da planta
+para as câmeras. O SSID fica salvo na flash do ESP, que reconecta sozinho.
+Validado em campo: violação aciona som/visual/tátil, normalização volta ao verde.
+
 ## Próximos incrementos (sugestões)
 
 - Painel de auditoria e de fusão no próprio dashboard (hoje via API/CLI).

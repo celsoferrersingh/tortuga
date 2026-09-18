@@ -24,7 +24,7 @@ def _open(src):
     is_url = isinstance(src, str) and "://" in src
     if is_url:
         os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                              "rtsp_transport;tcp|max_delay;500000|stimeout;5000000")
+                              "rtsp_transport;tcp|max_delay;500000|stimeout;15000000|timeout;15000000")
         cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
     else:
         cap = cv2.VideoCapture(src)

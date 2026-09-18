@@ -615,7 +615,7 @@ class DetectionPipeline:
         is_url=isinstance(cam,str) and "://" in cam
         if is_url:
             os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                                  "rtsp_transport;tcp|max_delay;500000|stimeout;5000000")
+                                  "rtsp_transport;tcp|max_delay;500000|stimeout;15000000|timeout;15000000")
             cap=cv2.VideoCapture(cam, cv2.CAP_FFMPEG)
         else:
             cap=cv2.VideoCapture(cam)
@@ -914,7 +914,9 @@ class App:
         win="Tortuga - "+(self._station_id or "PPE Monitor")
         cv2.namedWindow(win,cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win,self._total_w,self._total_h)
-        cv2.moveWindow(win,0,0)
+        # Cascata: sem deslocamento, TODAS as cameras abriam em (0,0), uma
+        # exatamente atras da outra — parecia que so uma tinha aberto.
+        cv2.moveWindow(win, getattr(self, "_win_x", 0), getattr(self, "_win_y", 0))
         cv2.setMouseCallback(win,self._mouse)
 
         # ── Multitarefa (estilo SO): pausa a Fase 2 quando a janela e minimizada ──
@@ -1114,6 +1116,8 @@ def main():
     p.add_argument("--fusion", action="store_true",
                    help="Fusao multi-camera: reporta presenca; o servidor funde varios angulos da estacao")
     p.add_argument("--camera-id", default=None, help="ID unico desta camera (p/ fusao na mesma estacao)")
+    p.add_argument("--win-x", type=int, default=0, help="posicao X da janela (cascata multi-camera)")
+    p.add_argument("--win-y", type=int, default=0, help="posicao Y da janela (cascata multi-camera)")
     p.add_argument("--ignore", default=None,
                    help="JSON de regioes a IGNORAR (maquinas fixas), normalizadas 0..1: '[[x1,y1,x2,y2],...]'")
     a=p.parse_args()
@@ -1125,11 +1129,13 @@ def main():
     else:
         pre = False
     ignore = json.loads(a.ignore) if a.ignore else None
-    App(cam, a.model, a.confidence, enable_pose=not a.no_pose,
+    _app = App(cam, a.model, a.confidence, enable_pose=not a.no_pose,
         det_size=a.det_size, dashboard_url=a.dashboard,
         station_id=a.station_id, ingest=(a.ingest or a.fusion),
         device=a.device, preprocess=pre, fusion=a.fusion, camera_id=a.camera_id,
-        ignore=ignore).run()
+        ignore=ignore)
+    _app._win_x = a.win_x; _app._win_y = a.win_y
+    _app.run()
 
 if __name__=="__main__":
     main()

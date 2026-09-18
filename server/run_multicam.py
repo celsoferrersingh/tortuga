@@ -72,8 +72,15 @@ def main():
         sys.exit("Nenhuma camera na config.")
     print(f"  {len(cams)} ponto(s) de visao:")
     cmds = []
+    _win_i = 0
     for c in cams:
-        cmd = build_cmd(c, cfg); cmds.append((c, cmd))
+        cmd = build_cmd(c, cfg)
+        _d = cfg.get("defaults", {})
+        if not c.get("headless", _d.get("headless", False)):
+            # cascata: cada janela 60px abaixo/direita da anterior
+            cmd += ["--win-x", str(_win_i * 60), "--win-y", str(_win_i * 60)]
+            _win_i += 1
+        cmds.append((c, cmd))
         _d = cfg.get("defaults", {})
         mode = "headless" if c.get("headless", _d.get("headless", False)) else "gui"
         print(f"   - {c.get('station_id','?'):8} [{mode:8}] {c.get('name','')}")
