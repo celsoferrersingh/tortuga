@@ -45,11 +45,13 @@ def main():
     ap.add_argument("--port", default="554")
     ap.add_argument("--ips", default=None,
                     help="varios IPs separados por virgula: salva um print de cada camera")
+    ap.add_argument("--config", action="store_true",
+                    help="testa TODAS as cameras do tortuga.config.json, com as URLs reais")
     ap.add_argument("--compare", action="store_true",
                     help="compara stream principal (subtype=0) x secundario (subtype=1)")
     a = ap.parse_args()
-    if not a.ip and not a.ips:
-        ap.error("informe --ip <IP> ou --ips <IP1,IP2,...>")
+    if not a.ip and not a.ips and not a.config:
+        ap.error("informe --ip <IP>, --ips <IP1,IP2,...> ou --config")
 
     pw_full = quote(a.password, safe="")        # tudo codificado: Metaindustr%21%40
     pw_at   = a.password.replace("@", "%40")    # so o @ codificado: Metaindustr!%40
@@ -67,6 +69,28 @@ def main():
     print("=" * 70)
     print(f"  DIAGNOSTICO RTSP — {a.ip}:{a.port}  usuario={a.user}")
     print("=" * 70)
+
+    if a.config:
+        import json, os, re
+        cfg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                          "tortuga.config.json"), encoding="utf-8"))
+        cams = cfg.get("cameras", [])
+        print(f"\n  Testando as {len(cams)} cameras da config (URL real de cada uma):\n")
+        ok_n = 0
+        for cam in cams:
+            st = cam.get("station_id", "?"); nome = cam.get("name", "")
+            ip = re.search(r"@([\d.]+):", cam["source"])
+            ip = ip.group(1) if ip else "?"
+            r = try_url(cam["source"], f"{st} ({nome}) {ip}")
+            if r: ok_n += 1
+        print("\n" + "=" * 70)
+        print(f"  {ok_n} de {len(cams)} cameras entregaram frame.")
+        if ok_n < len(cams):
+            print("  As que falharam: confira IP/senha na tabela, ou remova da config.")
+        else:
+            print("  Tudo pronto — pode subir o demo_limpo_metaindustria.bat")
+        print("=" * 70 + "\n")
+        return
 
     if a.ips:
         import os

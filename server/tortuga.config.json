@@ -16,14 +16,31 @@
     {
       "station_id": "EST-FRESA1",
       "name": "Fresa 1",
-      "source": "rtsp://admin:Metaindustr%21%40@10.14.22.94:554/cam/realmonitor?channel=1&subtype=1",
-      "_ignore_ajuda": "Zona a IGNORAR (braco robotico fixo), normalizada 0..1 no formato [x1,y1,x2,y2]. Confira/ajuste vendo a caixa 'IGNORADA' desenhada na tela. Se o robo aparecer em OUTRA camera, mova o campo 'ignore' para o bloco dela.",
+      "source": "rtsp://admin:SIDI2023@10.14.22.97:554/cam/realmonitor?channel=1&subtype=1",
+      "headless": false
+    },
+    {
+      "station_id": "EST-TORNO2",
+      "name": "Torno 2",
+      "source": "rtsp://admin:Metaindustr%21%40@10.14.22.95:554/cam/realmonitor?channel=1&subtype=1",
       "headless": false
     },
     {
       "station_id": "EST-FRESA2",
       "name": "Fresa 2",
-      "source": "rtsp://admin:Metaindustr%21%40@10.14.22.95:554/cam/realmonitor?channel=1&subtype=1",
+      "source": "rtsp://admin:SIDI2023@10.14.22.98:554/cam/realmonitor?channel=1&subtype=1",
+      "headless": false
+    },
+    {
+      "station_id": "EST-TORNO1",
+      "name": "Torno 1",
+      "source": "rtsp://admin:Metaindustr%21%40@10.14.22.99:554/cam/realmonitor?channel=1&subtype=1",
+      "headless": false
+    },
+    {
+      "station_id": "EST-TORNO3",
+      "name": "Torno 3",
+      "source": "rtsp://admin:Metaindustr%21%40@10.14.22.94:554/cam/realmonitor?channel=1&subtype=1",
       "headless": false
     }
   ]

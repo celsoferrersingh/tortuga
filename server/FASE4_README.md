@@ -183,6 +183,30 @@ acesso próprio em 2,4 GHz** só para o cinto, enquanto segue na rede da planta
 para as câmeras. O SSID fica salvo na flash do ESP, que reconecta sozinho.
 Validado em campo: violação aciona som/visual/tátil, normalização volta ao verde.
 
+## 13. Limite térmico em hardware portátil (achado da validação final)
+
+Na apresentação final, após ~15 min com **5 estações ativas e pose em todas**, o FPS
+despencou. A causa não era rede: o notebook estava apoiado sobre a **maleta de
+transporte em tecido**, obstruindo entrada e saída de ar. Com as saídas bloqueadas,
+a GPU atinge o limite térmico e o controlador reduz o clock (*thermal throttling*) —
+a carga continua, a capacidade cai.
+
+**Não é limitação de software.** As três defesas:
+
+1. **Operacional** — superfície rígida e plana, aberturas livres, espaço atrás da exaustão.
+2. **Hardware** — base de refrigeração ativa (C3Tech NBC-100BK, até 17,3", ventiladores
+   de 125 e 70 mm com controle de velocidade).
+3. **Software (já existia)** — a pose pausa nas janelas minimizadas. Foi com isso que as
+   **5 câmeras rodaram a 30 FPS** na planta.
+
+Verificação antes de apresentar:
+
+```
+monitor_gpu.bat      # temperatura, clock, utilizacao e aviso de throttling (somente leitura)
+```
+
+Referência prática: máximo abaixo de **80 °C** em 20 min de carga total = folga confortável.
+
 ## Próximos incrementos (sugestões)
 
 - Painel de auditoria e de fusão no próprio dashboard (hoje via API/CLI).
