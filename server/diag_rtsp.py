@@ -45,7 +45,8 @@ def main():
     ap.add_argument("--port", default="554")
     ap.add_argument("--ips", default=None,
                     help="varios IPs separados por virgula: salva um print de cada camera")
-    ap.add_argument("--config", action="store_true",
+    ap.add_argument("--config", nargs="?", const=True, default=None,
+                    metavar="ARQUIVO",
                     help="testa TODAS as cameras do tortuga.config.json, com as URLs reais")
     ap.add_argument("--compare", action="store_true",
                     help="compara stream principal (subtype=0) x secundario (subtype=1)")
@@ -57,12 +58,20 @@ def main():
     pw_at   = a.password.replace("@", "%40")    # so o @ codificado: Metaindustr!%40
     senhas = [("codificada  (%21%40)", pw_full),
               ("so @ codif. (!%40)  ", pw_at)]
+    # Caminhos por fabricante. A metaindustria era Dahua; em local novo (auditorio
+    # da FIAP, arena) a marca pode ser outra, por isso a lista e ampla.
     caminhos = [
-        ("Dahua principal", "/cam/realmonitor?channel=1&subtype=0"),
-        ("Dahua secundario", "/cam/realmonitor?channel=1&subtype=1"),
-        ("Hikvision principal", "/Streaming/Channels/101"),
+        ("Dahua/Intelbras secundario", "/cam/realmonitor?channel=1&subtype=1"),
+        ("Dahua/Intelbras principal", "/cam/realmonitor?channel=1&subtype=0"),
         ("Hikvision secundario", "/Streaming/Channels/102"),
+        ("Hikvision principal", "/Streaming/Channels/101"),
+        ("Axis", "/axis-media/media.amp"),
         ("generico /live", "/live"),
+        ("generico /stream1", "/stream1"),
+        ("generico /h264", "/h264"),
+        ("generico /video1", "/video1"),
+        ("generico /onvif1", "/onvif1"),
+        ("generico /11", "/11"),
         ("raiz /", "/"),
     ]
 
@@ -72,8 +81,13 @@ def main():
 
     if a.config:
         import json, os, re
-        cfg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                          "tortuga.config.json"), encoding="utf-8"))
+        _nome = "tortuga.config.json" if a.config is True else str(a.config)
+        _arq = _nome if os.path.isabs(_nome) else os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), _nome)
+        if not os.path.exists(_arq):
+            sys.exit(f"  [ERRO] config nao encontrada: {_arq}")
+        print(f"\n  Config: {os.path.basename(_arq)}")
+        cfg = json.load(open(_arq, encoding="utf-8"))
         cams = cfg.get("cameras", [])
         print(f"\n  Testando as {len(cams)} cameras da config (URL real de cada uma):\n")
         ok_n = 0

@@ -22,6 +22,11 @@ def main():
     ap.add_argument("--url", default=None, help="URL base do ESP, ex.: http://192.168.0.42")
     ap.add_argument("--metaindustria", action="store_true",
                     help="Registra o ESP para TODAS as cameras do tortuga.config.json (um cinto que dispara em qualquer camera)")
+    ap.add_argument("--config", default=None,
+                    help="Igual ao --metaindustria, mas usando OUTRA config "
+                         "(ex.: tortuga.config.fiap.json para o auditorio da FIAP)")
+    ap.add_argument("--area", default=None,
+                    help="Rotulo da area do operador demo (padrao: deduzido da config)")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     store = EventStore(a.db)
@@ -33,14 +38,22 @@ def main():
             u = u.split("://", 1)[1]
         u = "http://" + u
 
-    if a.metaindustria:
-        if not u:
-            print("  [ERRO] informe o IP: python set_esp.py --metaindustria --url http://<IP-DO-ESP>")
+    if a.metaindustria or a.config:
+        arquivo = a.config or "tortuga.config.json"
+        if not os.path.isabs(arquivo):
+            arquivo = os.path.join(HERE, arquivo)
+        if not os.path.exists(arquivo):
+            print(f"  [ERRO] config nao encontrada: {arquivo}")
+        elif not u:
+            print("  [ERRO] informe o IP: python set_esp.py --url http://<IP-DO-ESP> "
+                  + (f"--config {a.config}" if a.config else "--metaindustria"))
         else:
             import json
-            cfg = json.load(open(os.path.join(HERE, "tortuga.config.json"), encoding="utf-8"))
+            cfg = json.load(open(arquivo, encoding="utf-8"))
+            area = a.area or ("Metaindustria" if arquivo.endswith("tortuga.config.json")
+                              else "Demonstracao")
             # perfil generico com EPI obrigatorio, pra o alerta ter o que cobrar
-            store.upsert_worker("OP-DEMO", "Operador Demo", "Metaindustria", "A", 0,
+            store.upsert_worker("OP-DEMO", "Operador Demo", area, "A", 0,
                                 required_epis=["Hardhat"], confidence=0.45)
             n = 0
             for cam in cfg.get("cameras", []):
@@ -52,7 +65,8 @@ def main():
                 store.assign(dev, "OP-DEMO")
                 store.set_belt_esp(dev, u)
                 n += 1
-            print(f"  OK: ESP {u} registrado para {n} camera(s) da metaindustria (dispara em qualquer uma).")
+            print(f"  OK: ESP {u} registrado para {n} camera(s) de {os.path.basename(arquivo)} "
+                  f"(dispara em qualquer uma).")
     elif u:
         store.set_belt_esp(a.belt, u)
         print(f"  OK: {a.belt} -> {u}")
