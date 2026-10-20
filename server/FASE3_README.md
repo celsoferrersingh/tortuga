@@ -46,6 +46,28 @@ o `gui.py` aplica as zonas sobre o vídeo e a entrada na zona aciona o alerta.
 | `templates/` | `dashboard.html`, `config.html`, `checkin.html`. |
 | `../firmware/tortuga_esp32/` | Sketch do cinto (OLED + LED + buzzer + vibração). |
 
+**Conformidade de exames ocupacionais — NR-7 (PCMSO), sem punir o trabalhador.**
+O sistema acompanha a **validade do ASO** de cada operador e usa isso em dois lugares,
+com destinatários diferentes de propósito:
+
+- **No placar do operador: selo, não pontuação.** ASO válido rende o selo **“Exames em
+  conformidade”** — e **nada mais**. O exame **não entra no cálculo de pontos, nem
+  somando**: agendar o exame periódico é responsabilidade da empresa (NR-7), não do
+  trabalhador, e pontuar isso rebaixaria no ranking quem ainda não foi chamado pelo RH
+  — punição indireta por algo fora do seu controle. A pontuação usa só conformidade de
+  EPI, postura e sequência limpa. Não existe selo negativo.
+- **No painel do gestor:** o card *Conformidade de exames ocupacionais* mostra quantos
+  estão em dia, quem **vence em 30 dias** e quem está **vencido**, ordenado por urgência,
+  com a ação sugerida — **acionar o RH para o agendamento**. A cobrança fica inteira com
+  quem pode agir.
+
+**Escopo de dados (LGPD).** Guardamos **apenas a data de validade** — dado
+administrativo de conformidade, o mesmo que o RH já controla. **Resultado de exame,
+diagnóstico, restrição ou qualquer informação clínica não é coletado nem armazenado**
+(dado pessoal sensível, Art. 5º, II). O painel responde *“está em dia?”*, nunca *“o que
+o exame apontou?”* — a mesma disciplina do resto do projeto (sem reconhecimento facial,
+identidade por QR).
+
 ## Motor preditivo — Poisson × Binomial Negativa (robustez)
 
 O `risk_engine.py` modela cada operador como um processo de **Poisson**: com `k`
@@ -129,6 +151,8 @@ python gui.py --ingest --station-id EST-PRE --dashboard http://localhost:5005 --
 - `GET/POST /api/profiles`, `PUT /api/profiles/<id>` — perfis e EPIs monitorados.
 - `GET/POST /api/stations`, `GET /api/station-confidence?station_id=` — calibração do detector por estação.
 - `GET/POST /api/exclusions`, `PUT/DELETE /api/exclusions/<id>` — zonas de exclusão de máquina.
+- `GET /api/aso[?alerta_dias=30]`, `PUT /api/aso/<worker_id>` — conformidade NR-7: contagens,
+  listas por urgência e a validade do ASO (só a data; nada clínico).
 - `POST /api/snapshot`, `GET /api/snapshot/<station>`, `GET /api/snapshots` — frame da câmera (fundo do `/config`).
 - `GET /api/belts`, `POST /api/assign {device_id,worker_id}` — atribuição (QR).
 - `GET/POST /api/zones`, `PUT/DELETE /api/zones/<id>` — zonas de risco.

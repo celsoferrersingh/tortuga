@@ -90,6 +90,57 @@ Resolvido por **modem-sleep** (push preservado, latência <1 s) + OLED ocioso �
 ver `firmware/README.md` (orçamento de energia). Variante *pull* opcional pelo
 endpoint `GET /api/belt-status?device_id=<cinto>`.
 
+### 6.1 Achado de campo — capacidade não é a mesma coisa que tensão
+
+Durante os testes finais o cinto entrou em **reinício cíclico**: o OLED ficava
+piscando a tela de abertura `TORTUGA` e nunca chegava em `CONFORME`, de modo que
+o servidor HTTP do ESP nem subia e o alerta não tinha como ser entregue. O
+diagnóstico foi **brownout** — ligado ao cabo USB, o cinto estabilizou na hora.
+
+O ponto que vale registrar é que **o orçamento de energia acima continua
+correto, e mesmo assim o cinto falhou**. São duas grandezas distintas:
+
+| | O que mede | Como estava |
+|---|---|---|
+| **Capacidade** (mAh) | Quanta carga a pilha ainda tem | Suficiente — 2× AA ≈ 2500–2900 mAh a ~30 mA médios dá ~80–95 h |
+| **Tensão sob carga** (V) | Se a pilha sustenta o **pico** de corrente | Insuficiente — é o que derrubou |
+
+O ESP32 puxa **250–300 mA** nos picos de transmissão Wi-Fi. A resistência
+interna da pilha alcalina **cresce conforme ela descarrega**, então nesses picos
+a tensão afunda abaixo do limite de brownout (~3,0 V) e o chip reseta — mesmo
+com carga sobrando. Com 2× AA o problema aparece cedo: 3,0 V nominais caem para
+~2,4 V sob carga bem antes de a capacidade acabar.
+
+**Correção adotada:** alimentação por **power bank USB** (5 V estáveis entrando
+no regulador), que elimina o modo de falha por completo e mantém o cinto sem fio
+preso ao servidor. O cálculo de autonomia por capacidade segue válido para
+dimensionar o power bank — o que mudou foi a **fonte**, não o consumo.
+
+**Lição de projeto:** orçamento de energia de wearable precisa de dois critérios,
+não um. Capacidade responde *"dura o turno?"*; tensão sob pico responde
+*"liga?"*. Validar só o primeiro deixa passar uma falha que parece de software —
+e aqui ela se disfarçava bem, porque a detecção, o dashboard e a predição
+seguiam perfeitos enquanto o cinto ficava mudo.
+
+### 6.2 Entrega ao cinto agora é observável
+
+A causa de o problema demorar a aparecer foi o push ser **à prova de falha**: o
+`_push_esp` engole qualquer erro para nunca travar a detecção — correto em
+produção, cego em bancada. Dois instrumentos foram acrescentados **sem alterar
+essa garantia**:
+
+- **`GET /api/belt-health`** — taxa de entrega, último erro e horário do último
+  sucesso/falha. Responde na hora *"o alerta chegou ao cinto?"*.
+- **Aviso no console** do dashboard quando a entrega falha (no máximo 1 por
+  minuto, para não poluir a apresentação).
+- **`diag_cinto.bat`** — percorre a cadeia inteira (registro → o IP responde? →
+  varredura da rede → alerta real → correção do registro) e **descobre o IP do
+  ESP sozinho**, eliminando o IP digitado à mão, que já tinha causado uma falha
+  anterior (o cinto ficou registrado no endereço de um PC).
+
+A detecção permanece imune: há teste automatizado confirmando que o evento entra
+no banco e a trilha de auditoria segue íntegra mesmo com o cinto inalcançável.
+
 ## 7. Ajuste fino de robustez em filmagem real
 
 Cada câmera tem uma luz. Rode a calibração na **sua** filmagem e cole o preset
@@ -168,6 +219,8 @@ metaindústria (reduzem o diagnóstico de horas para minutos):
 | `diag_rtsp.py --ip X --compare` | Compara stream principal × secundário (tempo e resolução). |
 | `diag_rtsp.py --ips A,B,C` | Salva um print de cada câmera em `cams_preview/` para identificar qual é qual. |
 | `find_cams.bat` | Varre a sub-rede procurando câmeras (porta 554 aberta). |
+| `diag_cinto.bat` | Diagnostica o cinto ESP32 ponta a ponta e **acha o IP dele sozinho**. |
+| `demo_next.bat` | Arena: sobe tudo em um clique, com descoberta automática do cinto. |
 
 **Achados que viraram requisito:** endereços de câmera **mudam entre visitas**
 (um deles deixou de existir); câmeras de **lotes diferentes usam senhas
@@ -203,9 +256,29 @@ Verificação antes de apresentar:
 
 ```
 monitor_gpu.bat      # temperatura, clock, utilizacao e aviso de throttling (somente leitura)
+diag_cinto.bat       # o alerta chega ao cinto? acha o IP do ESP sozinho
 ```
 
 Referência prática: máximo abaixo de **80 °C** em 20 min de carga total = folga confortável.
+
+## Apresentação em um clique (`demo_next.bat`)
+
+Para a arena, onde o tempo de montagem é curto, `demo_next.bat` encadeia o
+preparo inteiro. O operador só precisa **ligar o Ponto de acesso móvel** e
+**pôr o cinto no power bank**; o resto é automático:
+
+1. confere se o hotspot está no ar (`192.168.137.1`) e avisa se não estiver;
+2. sobe o dashboard com **banco limpo** (`data/demo.db`, repopulado) — o banco
+   real da metaindústria não é tocado;
+3. **descobre o IP do ESP32 varrendo a rede**, registra em todos os cintos e
+   dispara um alerta de confirmação — sem abrir o painel de rede do Windows e
+   sem IP digitado à mão (que já foi causa de falha, §6.1);
+4. abre o painel do gestor e o check-in no navegador;
+5. sobe a câmera com detecção na EST-PRE.
+
+Se o cinto não for encontrado, o roteiro **segue mesmo assim**: detecção,
+dashboard e predição não dependem dele — apenas o alerta no corpo fica mudo, e
+`diag_cinto.bat` permite tentar de novo sem parar nada.
 
 ## Próximos incrementos (sugestões)
 

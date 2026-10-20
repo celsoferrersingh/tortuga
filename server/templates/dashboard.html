@@ -90,6 +90,20 @@ canvas{max-height:230px}
 .mval .txt{font-size:12.5px;color:var(--text2);line-height:1.5}
 .mdl{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;white-space:nowrap}
 .mdl.ok{color:#1E8E3E;background:rgba(52,199,89,.12)}
+/* auditoria */
+.aud-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.aud-badge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+ border-radius:20px;padding:6px 13px;white-space:nowrap}
+.aud-badge.ok{color:#1E8E3E;background:rgba(52,199,89,.14)}
+.aud-badge.bad{color:#C81E14;background:rgba(255,59,48,.14)}
+.aud-meta{font-size:12.5px;color:var(--text2);line-height:1.5}
+.hashv{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--blue2);
+ background:var(--method-bg);border:1px solid var(--method-border);border-radius:4px;padding:1px 6px}
+.aud-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.aud-btn{background:var(--surface);border:1px solid var(--border);color:var(--link);
+ border-radius:var(--radius);padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer;
+ font-family:var(--bsans);text-decoration:none;display:inline-block;line-height:1.3}
+.aud-btn:hover{border-color:var(--blue)}
 .mdl.bn{color:#B26B00;background:rgba(255,149,0,.14)}
 /* tempo de espera: turnos até o próximo incidente (Geométrica/BN) */
 .eta-hl{display:flex;align-items:center;gap:10px;margin:2px 0 12px;border-radius:var(--radius);
@@ -124,6 +138,23 @@ details.math .mbody{margin-top:8px}
  border-radius:20px;padding:2px 8px}
 .pts{font-family:var(--hsans);font-weight:700;font-size:18px;color:var(--blue);text-align:right;flex:0 0 auto}
 .pts small{display:block;font-family:var(--bsans);font-weight:400;font-size:10px;color:var(--muted)}
+.bdg.med{color:#0071E3;background:rgba(0,113,227,.13)}
+/* conformidade NR-7 (PCMSO) — painel do gestor */
+.aso-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:4px 0 12px}
+.aso-kpi{border:1px solid var(--line);border-radius:var(--radius);padding:11px 13px;background:var(--bg)}
+.aso-kpi b{display:block;font-family:var(--hsans);font-weight:700;font-size:22px;line-height:1.1}
+.aso-kpi span{font-size:11.5px;color:var(--text2)}
+.aso-kpi.ok b{color:#1E8E3E}.aso-kpi.warn b{color:#B26B00}
+.aso-kpi.bad b{color:#C81E14}.aso-kpi.neu b{color:var(--text2)}
+.aso-lgpd{font-size:11.5px;color:var(--text2);line-height:1.5;border:1px solid var(--method-border);
+ border-radius:var(--radius);background:var(--method-bg);padding:9px 12px;margin-top:10px}
+.aso-st{font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;white-space:nowrap}
+.aso-st.em_dia{color:#1E8E3E;background:rgba(52,199,89,.13)}
+.aso-st.a_vencer{color:#B26B00;background:rgba(255,149,0,.14)}
+.aso-st.vencido{color:#C81E14;background:rgba(255,59,48,.13)}
+.aso-st.sem_registro{color:var(--text2);background:var(--line)}
+.aso-date{background:var(--surface);color:var(--text);border:1px solid var(--border);
+ border-radius:var(--radius);padding:5px 7px;font-size:12.5px;font-family:var(--bsans)}
 /* coaching educativo */
 .coach{border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:var(--radius);
  padding:12px 14px;margin-bottom:10px;background:var(--bg)}
@@ -220,7 +251,9 @@ details.math .mbody{margin-top:8px}
   <div class="row2">
     <div class="card">
       <h2>Reconhecimento &amp; engajamento</h2>
-      <div class="sub">Gamificação positiva: o placar premia conformidade e sequências limpas — celebra o acerto, não pune o erro.</div>
+      <div class="sub">Gamificação positiva: o placar premia conformidade e sequências limpas — celebra o acerto, não pune o erro.
+        A pontuação usa <b>só o que o operador controla</b>; o exame ocupacional (NR-7) aparece como
+        <b>selo de reconhecimento</b> e <b>não pontua</b>, porque agendar é responsabilidade da empresa.</div>
       <div class="streakkpi"><b id="streak">—</b><span>dias sem ocorrência crítica no time</span></div>
       <div id="leaderboard"></div>
     </div>
@@ -229,6 +262,44 @@ details.math .mbody{margin-top:8px}
       <div class="sub">Para cada operador, a microorientação ancorada na NR do seu ponto fraco dominante — o "treino dirigido" que o motor preditivo recomenda.</div>
       <div id="coaching"></div>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Auditoria e rastreabilidade</h2>
+    <div class="sub">Cada evento entra numa cadeia <b>append-only encadeada por hash</b>: alterar ou remover
+      qualquer registro quebra a cadeia e é detectado aqui. A exportação vai assinada (HMAC-SHA256).</div>
+    <div class="aud-top" id="audtop"></div>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Registrado em</th><th>Operador</th><th>Evento</th>
+        <th>Estação</th><th class="num">Limiar</th><th>Hash</th>
+      </tr></thead>
+      <tbody id="audrows"></tbody>
+    </table>
+    <div class="aud-btns">
+      <a class="aud-btn" href="/api/audit/export?format=csv" target="_blank">Exportar CSV assinado</a>
+      <a class="aud-btn" href="/api/audit/export?format=html" target="_blank">Exportar HTML assinado</a>
+      <button class="aud-btn" id="audref">Verificar integridade agora</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Conformidade de exames ocupacionais · NR-7 (PCMSO)</h2>
+    <div class="sub">Agendar o exame é responsabilidade da empresa (NR-7), não do operador — por isso a pendência
+      é cobrada <b>aqui, do gestor</b>, que aciona o RH para o agendamento. O exame <b>não entra na pontuação
+      do operador</b>, nem somando: o placar não pode ordenar ninguém por algo fora do seu controle.
+      Quem está com o ASO válido recebe apenas o <b>selo "Exames em conformidade"</b>.</div>
+    <div class="aso-kpis" id="asokpis"></div>
+    <table>
+      <thead><tr>
+        <th>Operador</th><th>Área · turno</th><th>Situação</th><th>Validade do ASO</th><th>Ação</th>
+      </tr></thead>
+      <tbody id="asorows"></tbody>
+    </table>
+    <div class="aso-lgpd"><b>Escopo de dados (LGPD).</b> O sistema armazena apenas a <b>data de validade</b>
+      do ASO — dado administrativo de conformidade, que o RH já controla. <b>Resultado de exame, diagnóstico,
+      restrição ou qualquer informação clínica não é coletado nem armazenado</b> (dado pessoal sensível,
+      Art. 5º, II). O painel responde "está em dia?", nunca "o que o exame apontou?".</div>
   </div>
 
   <div class="card">
@@ -306,7 +377,8 @@ async function load(){
   document.getElementById('leaderboard').innerHTML=eng.leaderboard.slice(0,6).map((w,i)=>{
     const m=i<3?`g${i+1}`:'';
     const streak=w.streak_days==null?'sem registro':`${w.streak_days}d sem evento`;
-    const badges=w.badges.map(b=>`<span class="bdg">${b}</span>`).join('');
+    // Selo NR-7 em azul para distinguir: é reconhecimento, não vale pontos.
+    const badges=w.badges.map(b=>`<span class="bdg${b==='Exames em conformidade'?' med':''}"${b==='Exames em conformidade'?' title="ASO válido (NR-7). Selo de reconhecimento — não altera a pontuação."':''}>${b}</span>`).join('');
     return `<div class="lead-row"><div class="medal ${m}">${i+1}</div>
       <div class="lead-main"><div class="lead-name">${w.worker_id} · ${w.name}</div>
         <div class="lead-sub">${w.area} · conformidade ${w.conformity}% · ${streak}</div>
@@ -326,7 +398,68 @@ async function load(){
     const label=e.epi?`${e.type} (${e.epi})`:e.type;
     return `<div class="ev"><span class="dot" style="background:${c}"></span><div><div><b>${e.worker_id}</b> <span class="muted">· ${label}</span></div><div class="small muted">${e.area||''} · ${t} · <span style="color:${c}">${e.severity}</span></div></div></div>`;
   }).join('');
+  loadAudit();
+  loadAso();
   document.getElementById('upd').textContent=new Date().toLocaleTimeString('pt-BR');
+}
+
+// ── conformidade NR-7 (PCMSO): visão do gestor ──
+// Ordem deliberada: primeiro o vencido, depois o a vencer e o sem registro.
+// O operador em dia nao aparece na lista de acao — ele ja foi reconhecido no placar.
+const ASO_ORD=['vencido','a_vencer','sem_registro'];
+async function loadAso(){
+  try{
+    const a=await j('/api/aso');
+    document.getElementById('asokpis').innerHTML=[
+      ['ok','em dia',a.em_dia,`${a.pct_em_dia}% do time`],
+      ['warn',`vencem em ${a.alerta_dias} d`,a.a_vencer,'acionar o RH'],
+      ['bad','vencidos',a.vencido,'ação imediata do gestor'],
+      ['neu','sem registro',a.sem_registro,'pedir a validade ao RH'],
+    ].map(k=>`<div class="aso-kpi ${k[0]}"><b>${k[2]}</b><span>${k[1]}<br><span class="cap">${k[3]}</span></span></div>`).join('');
+    const linhas=ASO_ORD.flatMap(s=>a.listas[s].map(w=>[s,w]));
+    document.getElementById('asorows').innerHTML=linhas.length?linhas.map(([s,w])=>
+      `<tr><td><b>${w.worker_id}</b> <span class="muted small">${w.name}</span></td>
+        <td class="muted small">${w.area} · ${w.turno}</td>
+        <td><span class="aso-st ${s}">${w.label}</span></td>
+        <td><input class="aso-date" type="date" value="${w.validade||''}"
+             onchange="setAso('${w.worker_id}',this.value)"></td>
+        <td class="muted small">${s==='vencido'?'Acionar o RH: exame em atraso — reavaliar a liberação para a função':
+          s==='a_vencer'?'Acionar o RH: agendar o exame periódico':'Solicitar ao RH a validade do ASO'}</td></tr>`).join('')
+      :'<tr><td colspan="5" class="muted small">Todos os ASO em dia — nada pendente para o gestor. 👏</td></tr>';
+  }catch(e){
+    document.getElementById('asokpis').innerHTML='<div class="muted small">painel NR-7 indisponível</div>';
+  }
+}
+async function setAso(worker_id,validade){
+  await fetch('/api/aso/'+worker_id,{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aso_validade:validade})});
+  load();
+}
+
+async function loadAudit(){
+  try{
+    const [v,rows]=await Promise.all([j('/api/audit/verify'),j('/api/audit/recent?limit=8')]);
+    const ok=v.ok;
+    document.getElementById('audtop').innerHTML=
+      `<span class="aud-badge ${ok?'ok':'bad'}">${ok?'✓ Cadeia íntegra':'✗ Cadeia violada no registro '+v.broken_at}</span>
+       <span class="aud-meta"><b>${v.count}</b> registros encadeados · hash-cabeça
+         <span class="hashv">${(v.head||'').slice(0,16)}…</span> · assinatura
+         <span class="hashv">${(v.signature||'').slice(0,16)}…</span></span>`;
+    document.getElementById('audrows').innerHTML=rows.map(r=>{
+      const c=SEVC[r.severity]||'#888';
+      const ev=r.epi?`${r.type} (${r.epi})`:r.type;
+      const lim=(r.confidence==null)?'—':Math.round(r.confidence*100)+'%';
+      return `<tr><td class="muted small">${r.seq}</td>
+        <td class="small">${(r.audit_ts||'').replace('T',' ').slice(0,19)}</td>
+        <td><b>${r.worker_id||'—'}</b></td>
+        <td class="small">${ev} <span style="color:${c}">•</span></td>
+        <td class="small muted">${r.station_id||'—'}</td>
+        <td class="num small muted" title="limiar do detector no momento da medição">${lim}</td>
+        <td><span class="hashv">${(r.hash||'').slice(0,12)}…</span></td></tr>`;
+    }).join('')||'<tr><td colspan="7" class="muted small">Nenhum registro na trilha ainda.</td></tr>';
+  }catch(e){
+    document.getElementById('audtop').innerHTML='<span class="aud-meta">trilha indisponível</span>';
+  }
 }
 async function setArea(area,level){
   await fetch('/api/area-risk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({area,level})});
@@ -352,6 +485,7 @@ applyTheme(localStorage.getItem('tortuga-theme')||'light');
 themeBtn.onclick=()=>{const cur=document.documentElement.dataset.theme==='dark'?'light':'dark';
   localStorage.setItem('tortuga-theme',cur);applyTheme(cur);load();};
 
+document.getElementById('audref').onclick=()=>{loadAudit();};
 load();setInterval(load,15000);
 </script>
 </body>

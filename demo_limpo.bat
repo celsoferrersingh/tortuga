@@ -25,16 +25,27 @@ call "%VENV%"
 cd /d "%SERVER%"
 
 echo.
-echo   [1/3] Subindo o dashboard com dados LIMPOS (data\demo.db)...
+echo   [1/4] Subindo o dashboard com dados LIMPOS (data\demo.db)...
 start "Tortuga Dashboard (DEMO LIMPA)" cmd /k python dashboard.py --db data\demo.db --seed
 echo   Aguardando o dashboard subir e repopular...
 timeout /t 7 /nobreak >nul
 
-echo   [2/3] Abrindo o painel e o check-in (QR) no navegador...
+echo.
+echo   [2/4] Registrando o cinto ESP32 neste banco demo...
+set "ESPIP="
+set /p ESPIP=  Digite o IP do ESP (ex.: 192.168.137.2) e Enter [vazio = pular]: 
+IF NOT "%ESPIP%"=="" (
+    python set_esp.py --belt CINTO-PRE-01 --url %ESPIP% --db data\demo.db
+) ELSE (
+    echo   [aviso] Sem IP: o cinto nao vai apitar nesta demo.
+)
+
+echo.
+echo   [3/4] Abrindo o painel e o check-in (QR) no navegador...
 start "" http://localhost:5005
 start "" http://localhost:5005/checkin
 
-echo   [3/3] Abrindo a WEBCAM com deteccao (EPI + pose) - evento ao vivo em EST-PRE (OP-007)...
+echo   [4/4] Abrindo a WEBCAM com deteccao (EPI + pose) - evento ao vivo em EST-PRE (OP-007)...
 echo   (feche a janela do video para encerrar a demo)
 echo.
 python gui.py --camera 0 --device auto --confidence 0.45 --ingest --station-id EST-PRE

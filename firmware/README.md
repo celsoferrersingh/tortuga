@@ -58,6 +58,22 @@ Em vez disso, mantemos o modelo *push* e cortamos o consumo com **modem-sleep**.
 considerando perdas e picos de TX. (Em RX contínuo, sem modem-sleep, seriam
 ~24 h — já passaria de 8 h, mas com muito menos margem.)
 
+> ⚠ **Esse cálculo é de capacidade, e capacidade não basta.** Em teste de campo
+> o cinto entrou em reinício cíclico (tela `TORTUGA` piscando, sem chegar em
+> `CONFORME`) com carga ainda sobrando: **brownout**. O ESP32 puxa **250–300 mA**
+> nos picos de TX e a resistência interna da alcalina cresce ao descarregar, de
+> modo que a tensão afunda abaixo de ~3,0 V nesses picos — com 2× AA (3,0 V
+> nominais, ~2,4 V sob carga) isso acontece bem antes de os mAh acabarem.
+>
+> **Alimente por power bank USB** (5 V estáveis no regulador). O cálculo de
+> autonomia acima continua valendo para dimensionar o power bank; o que muda é a
+> fonte, não o consumo. Diagnóstico completo em `server/FASE4_README.md` §6.1.
+>
+> Sintoma a reconhecer: a tela `TORTUGA` sozinha é o **splash de boot**
+> (desenhado no `setup()`, antes do Wi-Fi). Saudável, ela dura ~2 s e vira
+> `CONFORME / Pode trabalhar`. Piscando = o ESP reinicia antes de terminar o
+> `setup()`, logo o servidor HTTP nem sobe e o push não tem como chegar.
+
 **Variante ultra-baixo-consumo (opcional, *pull*).** Se o cliente exigir vários
 dias por carga e tolerar latência de ~1–2 s no alerta, dá para inverter para
 *pull*: o ESP consulta `GET /api/belt-status?device_id=<cinto>` a cada ~1,5 s

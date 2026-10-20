@@ -5,17 +5,19 @@ import argparse, random
 from datetime import datetime, timedelta
 from events_store import EventStore
 
+# Último campo: validade do ASO em DIAS a partir de hoje (None = sem registro).
+# Só a data de validade — o sistema nunca guarda resultado de exame (NR-7 / LGPD).
 ROSTER = [
-    ("OP-001","Operador 001","Solda","A",0.30,["Hardhat","Safety Vest","Safety Glasses","Mask"],0.45),
-    ("OP-002","Operador 002","Montagem","A",0.18,["Hardhat","Safety Vest","Safety Glasses"],0.40),
-    ("OP-003","Operador 003","Prensa","B",0.45,["Hardhat","Safety Vest","Safety Glasses","Ear Protection"],0.45),
-    ("OP-004","Operador 004","Pintura","B",0.25,["Hardhat","Safety Vest","Mask","Ear Protection"],0.40),
-    ("OP-005","Operador 005","Expedição","C",0.20,["Hardhat","Safety Vest","Safety Boots"],0.40),
-    ("OP-006","Operador 006","Solda","C",0.35,["Hardhat","Safety Vest","Safety Glasses","Mask"],0.45),
-    ("OP-007","Operador 007","Prensa","A",1.25,["Hardhat","Safety Vest","Safety Glasses","Ear Protection"],0.45),
-    ("OP-008","Operador 008","Montagem","B",0.22,["Hardhat","Safety Vest","Safety Glasses"],0.40),
-    ("OP-009","Operador 009","Pintura","C",0.90,["Hardhat","Safety Vest","Mask","Ear Protection"],0.40),
-    ("OP-010","Operador 010","Expedição","A",0.28,["Hardhat","Safety Vest","Safety Boots"],0.40),
+    ("OP-001","Operador 001","Solda","A",0.30,["Hardhat","Safety Vest","Safety Glasses","Mask"],0.45,210),
+    ("OP-002","Operador 002","Montagem","A",0.18,["Hardhat","Safety Vest","Safety Glasses"],0.40,18),
+    ("OP-003","Operador 003","Prensa","B",0.45,["Hardhat","Safety Vest","Safety Glasses","Ear Protection"],0.45,305),
+    ("OP-004","Operador 004","Pintura","B",0.25,["Hardhat","Safety Vest","Mask","Ear Protection"],0.40,-12),
+    ("OP-005","Operador 005","Expedição","C",0.20,["Hardhat","Safety Vest","Safety Boots"],0.40,140),
+    ("OP-006","Operador 006","Solda","C",0.35,["Hardhat","Safety Vest","Safety Glasses","Mask"],0.45,62),
+    ("OP-007","Operador 007","Prensa","A",1.25,["Hardhat","Safety Vest","Safety Glasses","Ear Protection"],0.45,7),
+    ("OP-008","Operador 008","Montagem","B",0.22,["Hardhat","Safety Vest","Safety Glasses"],0.40,None),
+    ("OP-009","Operador 009","Pintura","C",0.90,["Hardhat","Safety Vest","Mask","Ear Protection"],0.40,240),
+    ("OP-010","Operador 010","Expedição","A",0.28,["Hardhat","Safety Vest","Safety Boots"],0.40,95),
 ]
 SHIFTS = 30
 BELTS = [
@@ -25,7 +27,10 @@ BELTS = [
     ("CINTO-EXP-01","Cinto Expedição 1","EST-EXP","OP-010"),
 ]
 ZONES = [
-    ("Prensa — área da matriz","critica","EST-PRE",[[0.55,0.30],[0.95,0.30],[0.95,0.92],[0.55,0.92]],["Hardhat","Ear Protection"]),
+    # Zona de DEMONSTRACAO: canto superior direito, pequena de proposito.
+    # Assim ela fica visivel na tela como recurso, mas so dispara quando o
+    # apresentador leva a mao ate la — em vez de acusar o tempo todo.
+    ("Prensa — área da matriz","critica","EST-PRE",[[0.74,0.06],[0.96,0.06],[0.96,0.30],[0.74,0.30]],["Hardhat","Ear Protection"]),
     ("Pintura — cabine de vapores","alta","EST-PIN",[[0.05,0.40],[0.45,0.40],[0.45,0.95],[0.05,0.95]],["Mask"]),
 ]
 TYPE_WEIGHTS = [("EPI_AUSENTE","alta",0.55),("POSTURA_RISCO","alta",0.22),
@@ -63,14 +68,17 @@ def seed(store, force=False):
             store._conn.execute("DELETE FROM "+t)
         store._conn.commit()
     random.seed(42)
-    for wid,name,area,turno,lam,epis,conf in ROSTER:
-        store.upsert_worker(wid,name,area,turno,SHIFTS,required_epis=epis,confidence=conf)
+    hoje = datetime.now().date()
+    for wid,name,area,turno,lam,epis,conf,aso_d in ROSTER:
+        aso = None if aso_d is None else (hoje + timedelta(days=aso_d)).isoformat()
+        store.upsert_worker(wid,name,area,turno,SHIFTS,required_epis=epis,
+                            confidence=conf,aso_validade=aso)
     for dev,name,st,worker in BELTS:
         store.upsert_belt(dev,name,st); store.assign(dev,worker)
     for name,level,st,pts,zepis in ZONES:
         store.add_zone(name,level,pts,station_id=st,required_epis=zepis)
     total = 0
-    for wid,name,area,turno,lam,epis,conf in ROSTER:
+    for wid,name,area,turno,lam,epis,conf,aso_d in ROSTER:
         st = "EST-"+area[:3].upper()
         for d in range(SHIFTS):
             for _ in range(_poisson(lam)):
