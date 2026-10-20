@@ -121,10 +121,8 @@ def main():
                 dets = [d for d in dets if not _ignored(d.get("bbox"), _w, _h)]
             if roi:                         # e mantem so o que esta na area util
                 _h, _w = frame.shape[:2]
-                dets = [d for d in dets
-                        if roi_filter.dentro_da_area(
-                            d.get("bbox"), roi, _w, _h,
-                            usar_pe="person" in str(d.get("class_name", "")).lower())]
+                # pessoa pelo pe; EPI por estar sobre uma pessoa que entrou
+                dets = roi_filter.filtrar_cena(dets, roi, _w, _h)
             person = any("person" in d["class_name"].lower() for d in dets)
             missing = PPEDetector.missing_required(dets, required, person)
 

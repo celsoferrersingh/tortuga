@@ -729,7 +729,9 @@ class DetectionPipeline:
         roi=getattr(self,"_roi",None)
         if roi and _fr is not None:
             _H,_W=_fr.shape[:2]
-            r["dets"]=roi_filter.filtrar(r.get("dets",[]),roi,_W,_H,usar_pe=False)
+            # Pessoa entra pelo PE; o EPI entra por estar SOBRE uma pessoa que
+            # entrou — a area e desenhada no chao e o capacete fica na cabeca.
+            r["dets"]=roi_filter.filtrar_cena(r.get("dets",[]),roi,_W,_H)
             _ppl=r.get("people")
             if _ppl:
                 # pessoa: usa o PE (base da caixa) — e onde ela esta pisando

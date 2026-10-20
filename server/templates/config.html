@@ -45,6 +45,13 @@ select,input[type=text],input[type=date]{background:var(--surface);color:var(--t
 .asost.a_vencer{color:#B26B00;background:rgba(255,149,0,.14)}
 .asost.vencido{color:#C81E14;background:rgba(255,59,48,.13)}
 .asost.sem_registro{color:var(--muted);background:var(--line)}
+/* seletor de modo de desenho: retangulo (rapido) x poligono (forma livre) */
+.modo{display:inline-flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.modo button{border:none;border-radius:0;background:var(--surface);color:var(--text2);
+ padding:6px 12px;font-size:12.5px;font-family:var(--bsans);cursor:pointer;font-weight:600}
+.modo button.on{background:var(--blue);color:#fff}
+.modo button+button{border-left:1px solid var(--border)}
+.dica{font-size:11.5px;color:var(--muted);margin-left:8px}
 button{background:var(--blue);color:#fff;border:none;border-radius:var(--radius);padding:7px 15px;font-weight:600;cursor:pointer;font-size:12.5px}
 button.ghost{background:var(--surface);border:1px solid var(--border);color:var(--text2)}
 .lvl{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:600}
@@ -110,8 +117,16 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
   <div class="card">
     <h2>Desenhar nova zona de risco</h2>
     <div class="sub">Zona de risco <b>gera alerta</b> quando alguém entra — é o oposto da zona de exclusão (logo abaixo), que
-      <b>remove</b> da cena. Escolha a câmera para desenhar <b>sobre a imagem real</b> e <b>clique</b> no quadro para marcar os
-      vértices do polígono (mínimo 3). As coordenadas são salvas em proporção (0–1) e renderizadas sobre o vídeo.</div>
+      <b>remove</b> da cena. Escolha a câmera para desenhar <b>sobre a imagem real</b>. As coordenadas são salvas em
+      proporção (0–1) e renderizadas sobre o vídeo.</div>
+    <div class="row" style="margin-bottom:8px">
+      <span class="small muted">Como desenhar:</span>
+      <span class="modo" id="zmodo">
+        <button data-m="rect" class="on">Retângulo (arrastar)</button>
+        <button data-m="poly">Polígono (clicar)</button>
+      </span>
+      <span class="dica" id="zdica">Arraste no quadro para definir a zona.</span>
+    </div>
     <div class="row" style="margin-bottom:10px">
       <span class="small muted">Câmera (fundo):</span>
       <select id="zstpick"><option value="">— escolha a estação —</option></select>
@@ -126,7 +141,7 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
           <select id="zlevel"><option value="critica">Crítica</option><option value="alta" selected>Alta</option><option value="informativa">Informativa</option></select>
           <span class="small muted">Estação:</span><input type="text" id="zstation" placeholder="EST-PRE" style="width:100px"></div>
         <div class="row" id="zepis"></div>
-        <div class="row"><button id="zsave">Salvar zona</button><button class="ghost" id="zreset">Limpar pontos</button><span class="small muted" id="zpts">0 pontos</span></div>
+        <div class="row"><button id="zsave">Salvar zona</button><button class="ghost" id="zreset">Limpar</button><span class="small muted" id="zpts">—</span></div>
       </div>
     </div>
   </div>
@@ -138,8 +153,15 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
       e <b>não gera evento</b>. É o inverso da zona de exclusão — em vez de remover um pedaço, mantém só um pedaço.
       <br><br><b>Use na Arena:</b> trace o polígono sobre a demarcação do chão. A plateia fica fora e, por construção,
       fora da análise — nada do público entra no banco. <b>Sem área útil definida, a cena inteira vale</b> (comportamento normal).
-      <br><br>Escolha a câmera, <b>clique</b> para marcar os vértices (mínimo 3). No vídeo, o que fica fora aparece
-      <b>escurecido</b> com o contorno verde, em até 4 s, sem reiniciar nada.</div>
+      <br><br>No vídeo, o que fica fora aparece <b>escurecido</b> com o contorno verde, em até 4 s, sem reiniciar nada.</div>
+    <div class="row" style="margin-bottom:8px">
+      <span class="small muted">Como desenhar:</span>
+      <span class="modo" id="rmodo">
+        <button data-m="rect" class="on">Retângulo (arrastar)</button>
+        <button data-m="poly">Polígono (clicar)</button>
+      </span>
+      <span class="dica" id="rdica">Arraste no quadro para definir a área.</span>
+    </div>
     <div class="row" style="margin-bottom:10px">
       <span class="small muted">Câmera (fundo):</span>
       <select id="rstpick"><option value="">— escolha a estação —</option></select>
@@ -155,8 +177,8 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
           <input type="text" id="rstation" placeholder="EST-PALCO1" style="width:130px">
           <span class="small muted">(vazio = todas as câmeras)</span></div>
         <div class="row"><button id="rsave">Salvar área útil</button>
-          <button class="ghost" id="rreset">Limpar pontos</button>
-          <span class="small muted" id="rpts">0 pontos</span></div>
+          <button class="ghost" id="rreset">Limpar</button>
+          <span class="small muted" id="rpts">—</span></div>
         <div class="warnbox" style="margin-top:10px;padding:9px 12px">
           <b>Cuidado ao desenhar.</b> O que define se a pessoa está dentro é o <b>pé</b> (base da caixa), não o centro —
           numa câmera alta e inclinada o tronco pode cair fora enquanto os pés estão dentro, e é o pé que diz onde ela pisa.
@@ -238,6 +260,46 @@ async function loadZones(){
   document.getElementById('zones').innerHTML=zs.map(z=>`<tr><td>${z.name}</td><td><span class="lvl l-${z.level}">${z.level}</span></td><td class="small muted">${z.station_id||'—'}</td><td><button class="ghost" onclick="delZone(${z.id})">remover</button></td></tr>`).join('')||'<tr><td colspan="4" class="muted small">Nenhuma zona ainda.</td></tr>';
 }
 async function delZone(id){await j('/api/zones/'+id,'DELETE');loadZones();toast('zona removida');}
+
+// ── Desenho por ARRASTO (padrao) ou por CLIQUE de vertices (forma livre) ──
+// Arrastar resolve 95% dos casos em 2 segundos: a demarcacao de um palco e a
+// area de uma maquina sao retangulares. O poligono fica para o que for torto.
+// Nos dois casos o resultado e a MESMA lista de pontos normalizados, entao o
+// servidor e os detectores nao mudam em nada.
+function _pos(cv,e){const r=cv.getBoundingClientRect();
+  return [Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),
+          Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))];}
+function _retangulo(a,b){
+  const x1=Math.min(a[0],b[0]),y1=Math.min(a[1],b[1]),
+        x2=Math.max(a[0],b[0]),y2=Math.max(a[1],b[1]);
+  return [[x1,y1],[x2,y1],[x2,y2],[x1,y2]];
+}
+// liga um canvas aos dois modos; getPts/setPts acessam a lista do card
+function ligarDesenho(cv,modoEl,dicaEl,get,set,redraw,textoRect,textoPoly){
+  let modo='rect',arr=null;
+  const dica=()=>{dicaEl.textContent = modo==='rect'?textoRect:textoPoly;};
+  modoEl.querySelectorAll('button').forEach(b=>{
+    b.onclick=()=>{
+      modo=b.dataset.m;
+      modoEl.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+      set([]); dica(); redraw();
+    };
+  });
+  dica();
+  cv.onmousedown=e=>{ if(modo!=='rect')return; arr=_pos(cv,e); set([]); redraw(); };
+  cv.onmousemove=e=>{ if(modo!=='rect'||!arr||!(e.buttons&1))return;
+                      set(_retangulo(arr,_pos(cv,e))); redraw(); };
+  const fim=e=>{ if(modo!=='rect'||!arr)return;
+                 const p=_pos(cv,e);
+                 // arrasto muito pequeno = clique sem querer: descarta
+                 if(Math.abs(p[0]-arr[0])<0.02||Math.abs(p[1]-arr[1])<0.02){ set([]); }
+                 else { set(_retangulo(arr,p)); }
+                 arr=null; redraw(); };
+  cv.onmouseup=fim; cv.onmouseleave=e=>{if(arr)fim(e);};
+  cv.onclick=e=>{ if(modo!=='rect'){ const q=get().slice(); q.push(_pos(cv,e)); set(q); redraw(); } };
+  return {modo:()=>modo};
+}
+
 let pts=[],zbg=null;const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 function draw(){
   ctx.clearRect(0,0,cv.width,cv.height);
@@ -247,9 +309,12 @@ function draw(){
   if(pts.length){ctx.beginPath();ctx.moveTo(pts[0][0]*cv.width,pts[0][1]*cv.height);pts.forEach(p=>ctx.lineTo(p[0]*cv.width,p[1]*cv.height));if(pts.length>2)ctx.closePath();
     ctx.fillStyle='rgba(255,59,48,.16)';ctx.fill();ctx.strokeStyle='#FF3B30';ctx.lineWidth=2;ctx.stroke();
     pts.forEach(p=>{ctx.fillStyle='#0071E3';ctx.beginPath();ctx.arc(p[0]*cv.width,p[1]*cv.height,4,0,7);ctx.fill();});}
-  document.getElementById('zpts').textContent=pts.length+' pontos';
+  document.getElementById('zpts').textContent=pts.length?(pts.length===4?'retangulo pronto':pts.length+' pontos'):'—';
 }
-cv.onclick=e=>{const r=cv.getBoundingClientRect();pts.push([(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]);draw();};
+ligarDesenho(cv,document.getElementById('zmodo'),document.getElementById('zdica'),
+  ()=>pts,v=>{pts=v;},draw,
+  'Arraste no quadro para definir a zona.',
+  'Clique nos vertices (minimo 3). Nao cruze as linhas.');
 document.getElementById('zreset').onclick=()=>{pts=[];draw();};
 document.getElementById('zepis').innerHTML='<span class="small muted">EPIs extra na zona:</span>'+EPIS.map(([k,l])=>`<label class="epi"><input type="checkbox" value="${k}">${l}</label>`).join('');
 document.getElementById('zsave').onclick=async()=>{
@@ -322,11 +387,12 @@ function rdraw(){
       rctx.fillText('AREA UTIL',rpts[0][0]*rcv.width+6,rpts[0][1]*rcv.height-6);
     }
   }
-  document.getElementById('rpts').textContent=rpts.length+' pontos';
+  document.getElementById('rpts').textContent=rpts.length?(rpts.length===4?'retangulo pronto':rpts.length+' pontos'):'—';
 }
-rcv.onclick=e=>{const r=rcv.getBoundingClientRect();
-  rpts.push([Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),
-             Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))]);rdraw();};
+ligarDesenho(rcv,document.getElementById('rmodo'),document.getElementById('rdica'),
+  ()=>rpts,v=>{rpts=v;},rdraw,
+  'Arraste no quadro para definir a area.',
+  'Clique nos vertices (minimo 3). Nao cruze as linhas.');
 document.getElementById('rreset').onclick=()=>{rpts=[];rdraw();};
 document.getElementById('rstation').oninput=()=>rdraw();
 document.getElementById('rbgrefresh').onclick=rloadBg;
