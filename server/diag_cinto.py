@@ -27,7 +27,12 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 from events_store import EventStore
 
 ASSINATURA = "Tortuga ESP32"          # o que o GET / do firmware responde
-FAIXAS_PADRAO = ["192.168.137"]       # Ponto de acesso movel do Windows (ICS)
+# IP FIXO do cinto quando ele e o ponto de acesso (firmware em modo AP).
+# E o caminho preferido desde o auditorio da FIAP: a rede de la e cabeada e sem
+# internet, e o Windows se recusa a ligar o Ponto de acesso movel nessa condicao.
+# Com o cinto sendo a rede, o endereco e sempre este — sem DHCP, sem descoberta.
+IP_CINTO_AP = "192.168.4.1"
+FAIXAS_PADRAO = ["192.168.4", "192.168.137"]   # AP do cinto; hotspot do Windows
 
 
 # ── cores no terminal do Windows (sem dependencia externa) ──
@@ -107,6 +112,15 @@ def modo_auto(a):
     store = EventStore(a.db)
     faixas = faixas_para_varrer(store, a.rede)
 
+    # 0) atalho mais rapido: o cinto em MODO AP esta sempre em 192.168.4.1
+    txt = sonda(IP_CINTO_AP, timeout=1.5)
+    if txt:
+        print(f"  {OK}  Cinto em MODO AP, no endereco fixo {_c('http://'+IP_CINTO_AP,'v')}")
+        print(_c("      (o cinto e o ponto de acesso — sem DHCP, sem varredura)", "m"))
+        _confirmar(store, IP_CINTO_AP, registrar=True,
+                   config=a.registrar_config, area=a.area)
+        return 0
+
     # 1) atalho: o IP ja registrado ainda responde? (caso comum, evita a varredura)
     for b in store.list_belts():
         u = b.get("esp32_url")
@@ -143,8 +157,16 @@ def modo_auto(a):
     print(_c("      Checagem rapida (10 segundos):", "a"))
     print("      1. O cinto esta no POWER BANK e saiu da tela 'TORTUGA'?")
     print("         Tem que mostrar 'CONFORME / Pode trabalhar'.")
-    print("      2. O Ponto de acesso movel do Windows esta LIGADO e em 2,4 GHz?")
-    print("      3. O cinto aparece em 'Dispositivos conectados' do hotspot?")
+    print()
+    print(_c("      2. MODO AP (recomendado em rede cabeada sem internet):", "a"))
+    print("         No boot o OLED deve mostrar 'CINTO = PONTO ACESSO'.")
+    print("         Conecte o Wi-Fi do NOTEBOOK na rede 'Tortuga-Cinto'")
+    print("         (senha tortuga2026). O cabo de rede segue nas cameras.")
+    print("         Para alternar o modo: segure BOOT e aperte RST.")
+    print()
+    print("      3. MODO STA (so se houver hotspot): o Ponto de acesso movel")
+    print("         esta LIGADO, em 2,4 GHz, e o cinto aparece em")
+    print("         'Dispositivos conectados'?")
     print()
     print(_c("      A apresentacao RODA sem o cinto — so o alerta no corpo fica mudo.", "a"))
     return 1

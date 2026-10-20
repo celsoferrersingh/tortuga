@@ -13,6 +13,7 @@ Uso:
 from __future__ import annotations
 import argparse, base64, json, os, sys, time
 import cv2
+import roi_filter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from detector import PPEDetector
@@ -79,6 +80,13 @@ def main():
         return any(x1 * W <= cx <= x2 * W and y1 * H <= cy <= y2 * H
                    for (x1, y1, x2, y2) in ignore)
 
+    # ── AREA UTIL: so o que estiver DENTRO do poligono e analisado ──
+    # Inverso da exclusao. Na Arena mantem a plateia fora da analise.
+    roi = dash.roi()
+    if roi:
+        print(f"  [headless] AREA UTIL ativa: {len(roi)} poligono(s) — "
+              f"fora dela nada e analisado")
+
     prof = dash.active_profile() or {}
     required = prof.get("required_epis", [])
     # limiar = calibracao da ESTACAO (nao do operador); se nao houver, usa o --confidence
@@ -111,6 +119,12 @@ def main():
             if ignore:                      # filtra maquinas fixas antes de qualquer decisao
                 _h, _w = frame.shape[:2]
                 dets = [d for d in dets if not _ignored(d.get("bbox"), _w, _h)]
+            if roi:                         # e mantem so o que esta na area util
+                _h, _w = frame.shape[:2]
+                dets = [d for d in dets
+                        if roi_filter.dentro_da_area(
+                            d.get("bbox"), roi, _w, _h,
+                            usar_pe="person" in str(d.get("class_name", "")).lower())]
             person = any("person" in d["class_name"].lower() for d in dets)
             missing = PPEDetector.missing_required(dets, required, person)
 

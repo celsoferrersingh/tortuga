@@ -39,7 +39,12 @@ tr:last-child td{border-bottom:none}
 .epi{display:inline-flex;align-items:center;gap:4px;margin:2px 9px 2px 0;font-size:12.5px;color:var(--text2)}
 .epi input{accent-color:var(--blue)}
 input[type=range]{vertical-align:middle;accent-color:var(--blue)}
-select,input[type=text]{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:7px 9px;font-size:13px;font-family:var(--bsans)}
+select,input[type=text],input[type=date]{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:7px 9px;font-size:13px;font-family:var(--bsans)}
+.asost{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:6px;white-space:nowrap}
+.asost.em_dia{color:#1E8E3E;background:rgba(52,199,89,.13)}
+.asost.a_vencer{color:#B26B00;background:rgba(255,149,0,.14)}
+.asost.vencido{color:#C81E14;background:rgba(255,59,48,.13)}
+.asost.sem_registro{color:var(--muted);background:var(--line)}
 button{background:var(--blue);color:#fff;border:none;border-radius:var(--radius);padding:7px 15px;font-weight:600;cursor:pointer;font-size:12.5px}
 button.ghost{background:var(--surface);border:1px solid var(--border);color:var(--text2)}
 .lvl{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:600}
@@ -64,7 +69,15 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
   <div class="card">
     <h2>Perfis de operador</h2>
     <div class="sub">Cada perfil define <b>quais EPIs</b> são monitorados para aquele operador. O QR no início do turno amarra o operador ao cinto. A <b>sensibilidade do detector</b> não fica aqui — é calibração da câmera (veja “Calibração da detecção”, abaixo).</div>
-    <table><thead><tr><th>ID</th><th>Área · Turno</th><th>EPIs monitorados</th><th></th></tr></thead><tbody id="profiles"></tbody></table>
+    <table><thead><tr><th>ID</th><th>Área · Turno</th><th>EPIs monitorados</th><th>Validade do ASO<br><span class="small muted" style="font-weight:400">NR-7 · PCMSO</span></th><th></th></tr></thead><tbody id="profiles"></tbody></table>
+    <div class="warnbox" style="margin-top:12px"><b>Só a validade, nunca o conteúdo.</b> Informe apenas a
+      <b>data de validade do ASO</b> — é dado administrativo de conformidade, o mesmo que o RH já controla.
+      <b>Não registre aqui resultado de exame, diagnóstico, restrição ou qualquer informação clínica:</b>
+      isso é dado pessoal sensível (LGPD, Art. 5º, II) e o sistema foi desenhado para não armazená-lo.
+      O ASO válido rende apenas o <b>selo "Exames em conformidade"</b> no placar — <b>o exame não entra na
+      pontuação do operador</b>, nem somando, porque agendar é responsabilidade da empresa e ninguém pode
+      ser ordenado por algo fora do seu controle. A pendência aparece no <b>painel do gestor</b>, que aciona
+      o RH para o agendamento.</div>
   </div>
   <div class="grid2">
     <div class="card"><h2>Cintos (ESP32)</h2>
@@ -118,6 +131,43 @@ canvas{background:var(--bg);border:1px solid var(--border);border-radius:var(--r
     </div>
   </div>
 
+  <div class="card" style="border-color:#1E8E3E">
+    <h2 style="color:#1E8E3E">Área útil — o que o sistema pode analisar</h2>
+    <div class="sub"><b>Delimita o escopo da análise.</b> Com uma área útil definida, o sistema considera
+      <b>somente o que estiver dentro do polígono</b>: quem ficar fora não é detectado, não conta como pessoa em cena
+      e <b>não gera evento</b>. É o inverso da zona de exclusão — em vez de remover um pedaço, mantém só um pedaço.
+      <br><br><b>Use na Arena:</b> trace o polígono sobre a demarcação do chão. A plateia fica fora e, por construção,
+      fora da análise — nada do público entra no banco. <b>Sem área útil definida, a cena inteira vale</b> (comportamento normal).
+      <br><br>Escolha a câmera, <b>clique</b> para marcar os vértices (mínimo 3). No vídeo, o que fica fora aparece
+      <b>escurecido</b> com o contorno verde, em até 4 s, sem reiniciar nada.</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="small muted">Câmera (fundo):</span>
+      <select id="rstpick"><option value="">— escolha a estação —</option></select>
+      <button class="ghost" id="rbgrefresh">Atualizar imagem</button>
+      <span class="small muted" id="rbgst">—</span>
+    </div>
+    <div class="grid2">
+      <canvas id="rcv" width="640" height="360"></canvas>
+      <div>
+        <label class="small muted">Nome</label><br>
+        <input type="text" id="rname" placeholder="Ex.: Palco — dentro da demarcação" style="width:100%">
+        <div class="row"><span class="small muted">Estação:</span>
+          <input type="text" id="rstation" placeholder="EST-PALCO1" style="width:130px">
+          <span class="small muted">(vazio = todas as câmeras)</span></div>
+        <div class="row"><button id="rsave">Salvar área útil</button>
+          <button class="ghost" id="rreset">Limpar pontos</button>
+          <span class="small muted" id="rpts">0 pontos</span></div>
+        <div class="warnbox" style="margin-top:10px;padding:9px 12px">
+          <b>Cuidado ao desenhar.</b> O que define se a pessoa está dentro é o <b>pé</b> (base da caixa), não o centro —
+          numa câmera alta e inclinada o tronco pode cair fora enquanto os pés estão dentro, e é o pé que diz onde ela pisa.
+          Inclua a faixa do chão onde os atores vão pisar, com uma folga.
+        </div>
+        <table style="margin-top:10px"><thead><tr><th>Nome</th><th>Estação</th><th>Pontos</th><th></th></tr></thead>
+          <tbody id="rlist"></tbody></table>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <h2>Zonas de exclusão de máquina</h2>
     <div class="sub">Diferente das zonas de risco: estas <b>não geram alerta</b> — elas <b>removem da cena</b> o que estiver dentro
@@ -156,13 +206,26 @@ async function loadProfiles(){
   const ps=await j('/api/profiles');
   document.getElementById('profiles').innerHTML=ps.map(p=>{
     const ck=EPIS.map(([k,lbl])=>`<label class="epi"><input type="checkbox" data-w="${p.worker_id}" value="${k}" ${p.required_epis.includes(k)?'checked':''}>${lbl}</label>`).join('');
+    const a=p.aso||asoLocal(p.aso_validade);
     return `<tr><td><b>${p.worker_id}</b><div class="small muted">${p.name}</div></td>
       <td class="small">${p.area}<div class="muted">Turno ${p.turno}</div></td><td>${ck}</td>
+      <td><input type="date" data-aso="${p.worker_id}" value="${p.aso_validade||''}">
+        <span class="asost ${a.status}">${a.label}</span></td>
       <td><button onclick="saveProfile('${p.worker_id}')">Salvar</button></td></tr>`;}).join('');
+}
+// espelho no cliente de events_store.aso_status (só validade; nada clínico)
+function asoLocal(v){
+  if(!v) return {status:'sem_registro',label:'Sem registro'};
+  const d=Math.round((new Date(v+'T00:00:00')-new Date(new Date().toDateString()))/86400000);
+  if(d<0) return {status:'vencido',label:`Vencido há ${-d} d`};
+  if(d<=30) return {status:'a_vencer',label:`Vence em ${d} d`};
+  return {status:'em_dia',label:'Em dia'};
 }
 async function saveProfile(wid){
   const epis=[...document.querySelectorAll(`input[data-w="${wid}"]:checked`)].map(c=>c.value);
-  await j('/api/profiles/'+wid,'PUT',{required_epis:epis}); toast(wid+' atualizado');
+  const aso=(document.querySelector(`input[data-aso="${wid}"]`)||{}).value||null;
+  await j('/api/profiles/'+wid,'PUT',{required_epis:epis,aso_validade:aso});
+  toast(wid+' atualizado'); loadProfiles();
 }
 async function loadBelts(){
   const [belts,ps]=await Promise.all([j('/api/belts'),j('/api/profiles')]);
@@ -198,9 +261,9 @@ document.getElementById('zsave').onclick=async()=>{
 };
 // ── Zonas de EXCLUSAO de maquina (retangulo por arrasto) ──
 let xr=null,xdrag=null,xall=[],xbg=null;
-async function loadSnapStations(){   // preenche os DOIS seletores de camera
+async function loadSnapStations(){   // preenche os TRES seletores de camera
   const ss=await j('/api/snapshots');
-  [['xstpick','xbgst'],['zstpick','zbgst']].forEach(([sid,stid])=>{
+  [['xstpick','xbgst'],['zstpick','zbgst'],['rstpick','rbgst']].forEach(([sid,stid])=>{
     const sel=document.getElementById(sid),cur=sel.value;
     sel.innerHTML='<option value="">— escolha a estação —</option>'+
       ss.map(s=>`<option value="${s.station_id}">${s.station_id} · imagem de ${s.age}s atrás</option>`).join('');
@@ -218,6 +281,80 @@ function loadBgInto(pickId,statusId,setter){
 }
 function xloadBg(){loadBgInto('xstpick','xbgst',im=>{xbg=im;xdraw();});}
 function zloadBg(){loadBgInto('zstpick','zbgst',im=>{zbg=im;draw();});}
+function rloadBg(){loadBgInto('rstpick','rbgst',im=>{rbg=im;rdraw();});}
+
+// ── AREA UTIL: poligono que delimita o que pode ser analisado ──
+// Escurece o que fica de FORA, igual ao que o video mostra, para o gestor ver
+// exatamente o recorte antes de salvar.
+let rpts=[],rbg=null,rall=[];
+const rcv=document.getElementById('rcv'),rctx=rcv.getContext('2d');
+function rpoly(ctx,p,cv){ctx.beginPath();ctx.moveTo(p[0][0]*cv.width,p[0][1]*cv.height);
+  p.forEach(q=>ctx.lineTo(q[0]*cv.width,q[1]*cv.height));ctx.closePath();}
+function rdraw(){
+  rctx.clearRect(0,0,rcv.width,rcv.height);
+  if(rbg) rctx.drawImage(rbg,0,0,rcv.width,rcv.height);
+  rctx.strokeStyle=rbg?'rgba(255,255,255,.20)':'#E5E5EA';rctx.lineWidth=1;
+  for(let x=0;x<rcv.width;x+=40){rctx.beginPath();rctx.moveTo(x,0);rctx.lineTo(x,rcv.height);rctx.stroke();}
+  for(let y=0;y<rcv.height;y+=40){rctx.beginPath();rctx.moveTo(0,y);rctx.lineTo(rcv.width,y);rctx.stroke();}
+  const st=document.getElementById('rstation').value.trim();
+  // areas ja salvas desta estacao
+  rall.filter(a=>!st||!a.station_id||a.station_id===st).forEach(a=>{
+    if(!a.points||a.points.length<3)return;
+    rpoly(rctx,a.points,rcv);
+    rctx.fillStyle='rgba(52,199,89,.16)';rctx.fill();
+    rctx.strokeStyle='#1E8E3E';rctx.lineWidth=1.5;rctx.stroke();
+  });
+  // o poligono sendo desenhado agora: escurece o lado de fora
+  if(rpts.length>2){
+    rctx.save();
+    rctx.beginPath();rctx.rect(0,0,rcv.width,rcv.height);
+    rpoly(rctx,rpts,rcv);
+    rctx.fillStyle='rgba(0,0,0,.55)';rctx.fill('evenodd');   // so o EXTERIOR
+    rctx.restore();
+  }
+  if(rpts.length){
+    rpoly(rctx,rpts,rcv);
+    rctx.strokeStyle='#34C759';rctx.lineWidth=2.5;rctx.stroke();
+    rpts.forEach(p=>{rctx.fillStyle='#1E8E3E';rctx.beginPath();
+      rctx.arc(p[0]*rcv.width,p[1]*rcv.height,4,0,7);rctx.fill();});
+    if(rpts.length>2){
+      rctx.fillStyle='#fff';rctx.font='bold 12px -apple-system,Segoe UI,sans-serif';
+      rctx.fillText('AREA UTIL',rpts[0][0]*rcv.width+6,rpts[0][1]*rcv.height-6);
+    }
+  }
+  document.getElementById('rpts').textContent=rpts.length+' pontos';
+}
+rcv.onclick=e=>{const r=rcv.getBoundingClientRect();
+  rpts.push([Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),
+             Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))]);rdraw();};
+document.getElementById('rreset').onclick=()=>{rpts=[];rdraw();};
+document.getElementById('rstation').oninput=()=>rdraw();
+document.getElementById('rbgrefresh').onclick=rloadBg;
+document.getElementById('rstpick').onchange=function(){
+  const v=this.value;if(v&&!document.getElementById('rstation').value.trim())
+    document.getElementById('rstation').value=v;
+  rloadBg();};
+document.getElementById('rsave').onclick=async()=>{
+  if(rpts.length<3){toast('marque ao menos 3 pontos');return;}
+  const name=document.getElementById('rname').value.trim()||'Area util';
+  const station=document.getElementById('rstation').value.trim()||null;
+  await j('/api/roi','POST',{name,points:rpts,station_id:station});
+  rpts=[];document.getElementById('rname').value='';
+  loadRoi();toast('área útil salva — o vídeo aplica em até 4 s');
+};
+async function loadRoi(){
+  rall=await j('/api/roi');
+  document.getElementById('rlist').innerHTML=rall.length?rall.map(a=>
+    `<tr><td><b>${a.name}</b></td><td class="small muted">${a.station_id||'todas'}</td>
+      <td class="small">${(a.points||[]).length}</td>
+      <td><button class="ghost" onclick="delRoi(${a.id})">Remover</button></td></tr>`).join('')
+    :'<tr><td colspan="4" class="small muted">Nenhuma área útil — a cena inteira está sendo analisada.</td></tr>';
+  rdraw();
+}
+async function delRoi(id){
+  await j('/api/roi/'+id,'DELETE');loadRoi();
+  toast('área removida — a cena inteira volta a valer');
+}
 const xcv=document.getElementById('xcv'),xctx=xcv.getContext('2d');
 function xdraw(){
   xctx.clearRect(0,0,xcv.width,xcv.height);
@@ -257,6 +394,7 @@ document.getElementById('zstpick').onchange=()=>{
 document.getElementById('zbgrefresh').onclick=()=>{loadSnapStations();zloadBg();};
 setInterval(()=>{if(document.getElementById('zstpick').value)zloadBg();},5000);
 setInterval(()=>{if(document.getElementById('xstpick').value)xloadBg();},5000);
+setInterval(()=>{if(document.getElementById('rstpick').value)rloadBg();},5000);
 setInterval(loadSnapStations,10000);
 async function loadExcl(){
   xall=await j('/api/exclusions');
@@ -297,11 +435,11 @@ document.getElementById('stadd').onclick=async()=>{
   await j('/api/stations','POST',{station_id:st,confidence:0.45});
   document.getElementById('stname').value='';loadStations();toast('estação '+st+' adicionada');
 };
-loadProfiles();loadBelts();loadZones();loadExcl();loadStations();loadSnapStations();draw();
+loadProfiles();loadBelts();loadZones();loadExcl();loadRoi();loadStations();loadSnapStations();draw();rdraw();
 const _tb=document.getElementById('theme');
 function _applyTheme(t){document.documentElement.dataset.theme=t;_tb.textContent=t==='dark'?'☀️ Claro':'🌙 Escuro';}
 _applyTheme(localStorage.getItem('tortuga-theme')||'light');
-_tb.onclick=()=>{const c=document.documentElement.dataset.theme==='dark'?'light':'dark';localStorage.setItem('tortuga-theme',c);_applyTheme(c);draw();xdraw();};
+_tb.onclick=()=>{const c=document.documentElement.dataset.theme==='dark'?'light':'dark';localStorage.setItem('tortuga-theme',c);_applyTheme(c);draw();xdraw();rdraw();};
 </script>
 </body>
 </html>

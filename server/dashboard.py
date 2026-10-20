@@ -9,6 +9,7 @@ USO:  pip install flask qrcode[pil]
 """
 from __future__ import annotations
 import argparse, base64, json, os, threading, time, urllib.request
+from datetime import datetime
 from flask import Flask, jsonify, render_template, request, Response
 from events_store import EventStore
 from risk_engine import rank_workers, rank_areas, dispersion_report
@@ -19,18 +20,40 @@ from fusion import FusionCoordinator
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 
+# Contador do push: a entrega ao cinto NUNCA pode derrubar a detecção, então a
+# falha é engolida — mas engolir em silêncio fazia o sistema parecer saudável com
+# o cinto mudo. Agora o erro aparece no console (1x por minuto, sem poluir) e em
+# /api/belt-health, que diz na hora se o último alerta chegou ao cinto.
+_PUSH = {"ok": 0, "fail": 0, "last_url": None, "last_error": None,
+         "last_ok_at": None, "last_fail_at": None, "_logged_at": 0.0}
+
+
 def _push_esp(esp_url, payload):
     """Push HTTP não-bloqueante pro cinto ESP32 (POST {esp_url}/status). À prova de falha."""
     if not esp_url:
+        _PUSH["fail"] += 1
+        _PUSH["last_error"] = "cinto sem IP registrado (use set_esp.py ou diag_cinto.bat)"
+        _PUSH["last_fail_at"] = datetime.now().isoformat(timespec="seconds")
         return
     def _go():
+        _PUSH["last_url"] = esp_url
         try:
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(esp_url.rstrip("/") + "/status", data=data,
                                          method="POST", headers={"Content-Type": "application/json"})
             urllib.request.urlopen(req, timeout=1.0).read()
-        except Exception:
-            pass
+            _PUSH["ok"] += 1
+            _PUSH["last_error"] = None
+            _PUSH["last_ok_at"] = datetime.now().isoformat(timespec="seconds")
+        except Exception as e:
+            _PUSH["fail"] += 1
+            _PUSH["last_error"] = f"{type(e).__name__}: {e}"
+            _PUSH["last_fail_at"] = datetime.now().isoformat(timespec="seconds")
+            agora = time.time()
+            if agora - _PUSH["_logged_at"] > 60:      # no máximo 1 aviso por minuto
+                _PUSH["_logged_at"] = agora
+                print(f"  [CINTO] alerta NAO entregue em {esp_url} -> {_PUSH['last_error']}"
+                      f"  ({_PUSH['fail']} falhas)  rode: diag_cinto.bat", flush=True)
     threading.Thread(target=_go, daemon=True).start()
 
 
@@ -155,6 +178,29 @@ def create_app(db_path="data/tortuga.db"):
             store.delete_exclusion(eid); return jsonify({"ok": True})
         store.update_exclusion(eid, **request.get_json(force=True)); return jsonify({"ok": True})
 
+    # ── AREA UTIL: delimita o que o sistema PODE analisar ──
+    # Inverso da exclusao: mantem somente o que esta DENTRO do poligono.
+    # Na Arena, a plateia fica fora — logo, fora da analise, por construcao.
+    @app.route("/api/roi", methods=["GET", "POST"])
+    def api_roi():
+        if request.method == "POST":
+            d = request.get_json(force=True)
+            pts = d.get("points") or []
+            if len(pts) < 3:
+                return jsonify({"ok": False, "error": "a area util precisa de ao menos 3 pontos"}), 400
+            rid = store.add_roi(d.get("name", "Area util"), pts, d.get("station_id"))
+            return jsonify({"ok": True, "id": rid})
+        return jsonify(store.list_roi(request.args.get("station_id")))
+
+    @app.route("/api/roi/<int:rid>", methods=["PUT", "DELETE"])
+    def api_roi_edit(rid):
+        if request.method == "DELETE":
+            store.delete_roi(rid); return jsonify({"ok": True})
+        d = request.get_json(force=True)
+        if "points" in d and len(d["points"]) < 3:
+            return jsonify({"ok": False, "error": "a area util precisa de ao menos 3 pontos"}), 400
+        store.update_roi(rid, **d); return jsonify({"ok": True})
+
     # ── calibração do detector POR ESTAÇÃO (limiar do YOLO) ──
     # Fica na estação (arranjo óptico), não no operador: assim todos que passam
     # pela mesma câmera são medidos com o mesmo instrumento.
@@ -237,10 +283,44 @@ def create_app(db_path="data/tortuga.db"):
                         "conformity": store.conformity_rate()}
         return jsonify(data)
 
+    # ── conformidade NR-7 (PCMSO): painel do GESTOR ──
+    # Agendar o exame é responsabilidade da empresa, então o vencimento é
+    # cobrado de quem pode agir (o gestor) — no placar do operador o ASO
+    # só rende bônus. Expõe apenas validade e contagens; nada de dado clínico.
+    @app.route("/api/aso")
+    def api_aso():
+        dias = max(1, min(int(request.args.get("alerta_dias", 30)), 365))
+        return jsonify(store.aso_report(alerta_dias=dias))
+
+    @app.route("/api/aso/<worker_id>", methods=["PUT"])
+    def api_aso_set(worker_id):
+        d = request.get_json(force=True)
+        v = (d.get("aso_validade") or "").strip() or None
+        if v:
+            try:
+                datetime.fromisoformat(v[:10])
+            except Exception:
+                return jsonify({"ok": False, "error": "data inválida (use AAAA-MM-DD)"}), 400
+        store.update_profile(worker_id, aso_validade=v)
+        return jsonify({"ok": True, "worker_id": worker_id, "aso_validade": v})
+
     # ── auditabilidade: verificação de integridade + exportação assinada ──
     @app.route("/api/audit/verify")
     def api_audit_verify():
-        return jsonify(audit.verify(store.audit_rows()))
+        rows = store.audit_rows()
+        v = audit.verify(rows)
+        # assinatura HMAC do hash-cabeca: prova de que a cadeia nao foi trocada inteira
+        v["signature"] = audit.sign(audit.head(rows))
+        return jsonify(v)
+
+    @app.route("/api/audit/recent")
+    def api_audit_recent():
+        """Ultimos registros da trilha, ja legiveis (para o painel do gestor)."""
+        n = max(1, min(int(request.args.get("limit", 8)), 100))
+        filt = {k: request.args.get(k) for k in ("worker_id", "station_id", "turno", "area")
+                if request.args.get(k)}
+        linhas = audit.flatten(store.audit_rows(), filt or None)
+        return jsonify(linhas[-n:][::-1])
 
     @app.route("/api/audit/export")
     def api_audit_export():
@@ -278,6 +358,16 @@ def create_app(db_path="data/tortuga.db"):
                           {"status": "VIOLACAO", "severity": sev, "message": msg,
                            "epi": d.get("epi"), "worker_id": wid})
         return jsonify({"ok": True, "worker_id": wid, "severity": sev})
+
+    # ── saúde da entrega ao cinto: o alerta está realmente chegando? ──
+    @app.route("/api/belt-health")
+    def api_belt_health():
+        tot = _PUSH["ok"] + _PUSH["fail"]
+        return jsonify({**{k: v for k, v in _PUSH.items() if not k.startswith("_")},
+                        "total": tot,
+                        "taxa_entrega": round(100.0 * _PUSH["ok"] / tot, 1) if tot else None,
+                        "cintos": [{"device_id": b["device_id"], "station_id": b.get("station_id"),
+                                    "esp32_url": b.get("esp32_url")} for b in store.list_belts()]})
 
     # ── status pendente do cinto (modelo PULL ultra-baixo-consumo do ESP32) ──
     @app.route("/api/belt-status")

@@ -88,6 +88,21 @@ class DashboardClient:
         except Exception:
             return []
 
+    def roi(self):
+        """Poligonos normalizados da AREA UTIL desta estacao.
+
+        Lista vazia = sem restricao (a cena inteira vale). Com poligono, so o
+        que estiver DENTRO dele e analisado — e o que mantem a plateia da Arena
+        fora da analise.
+        """
+        q = f"/api/roi?station_id={self.station_id}" if self.station_id else "/api/roi"
+        try:
+            rows = self._get(q) or []
+            return [r["points"] for r in rows
+                    if r.get("enabled", True) and len(r.get("points") or []) >= 3]
+        except Exception:
+            return []
+
     def snapshot(self, jpg_b64):
         """Envia um print desta camera ao dashboard (fundo real do /config)."""
         return self._post("/api/snapshot", {"station_id": self.station_id, "jpg": jpg_b64})

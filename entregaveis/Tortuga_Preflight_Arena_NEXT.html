@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Tortuga · Pré-voo da Arena NEXT</title>
+<style>
+  :root{--blue:#0071E3;--ink:#1D1D1F;--muted:#6E6E73;--line:#D2D2D7;--amber:#B26B00;
+        --green:#1E8E3E;--red:#C81E14;--bg:#F5F5F7;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);line-height:1.45;font-size:12.5px;background:#fff}
+  .page{max-width:800px;margin:0 auto;padding:22px 28px}
+  header{border-bottom:2px solid var(--blue);padding-bottom:9px;margin-bottom:13px;
+         display:flex;align-items:flex-end;justify-content:space-between}
+  h1{color:var(--blue);font-size:20px;letter-spacing:-.02em}
+  h1 small{display:block;color:var(--muted);font-size:11.5px;font-weight:400;margin-top:2px}
+  .tag{font-size:11px;color:var(--muted);text-align:right}
+  h2{font-size:14px;margin:15px 0 6px;border-left:3px solid var(--blue);padding-left:8px}
+  h2.g{border-color:var(--green);color:var(--green)}
+  h2.a{border-color:var(--amber);color:var(--amber)}
+  p{margin:5px 0}
+  .muted{color:var(--muted)}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg);
+       border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11.5px}
+  .box{border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin:8px 0;background:var(--bg)}
+  .box.g{border-color:#BFE0C6;background:#F1FAF3}
+  .box.a{border-color:#F0D8A8;background:#FDF6E9}
+  .box.r{border-color:#F3C4C1;background:#FDECEB}
+  .box b.t{display:block;margin-bottom:4px}
+  ol{margin:5px 0 5px 20px}ul{margin:4px 0 4px 18px}
+  li{margin:3px 0}
+  .chk{list-style:none;margin:6px 0 0 0}
+  .chk li{margin:5px 0;padding-left:23px;position:relative}
+  .chk li::before{content:"";position:absolute;left:0;top:1px;width:13px;height:13px;
+                  border:1.5px solid var(--muted);border-radius:3px}
+  table{border-collapse:collapse;width:100%;margin:7px 0;font-size:11.5px}
+  th,td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:#EAF2FD;color:var(--blue);font-size:11px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .note{font-size:11px;color:var(--muted);margin-top:14px;border-top:1px solid var(--line);padding-top:8px}
+  @page{size:A4;margin:11mm}
+  @media print{body{font-size:11.5px}.page{padding:0}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Pré-voo da Arena NEXT<small>O que mudou depois do ensaio no auditório — e a ordem do dia</small></h1>
+    <div class="tag">Projeto Tortuga<br>24/10/2026</div>
+  </header>
+
+  <div class="box a">
+    <b class="t">Os três problemas do ensaio, e como cada um ficou resolvido</b>
+    <table>
+      <tr><th style="width:30%">Problema no auditório</th><th>Como está agora</th></tr>
+      <tr><td>O Ponto de acesso móvel do Windows <b>não liga</b> em rede cabeada sem internet</td>
+          <td><b>O cinto virou o ponto de acesso.</b> Ele publica a rede <code>Tortuga-Cinto</code> e o notebook conecta nela. Não depende do Windows nem de internet.</td></tr>
+      <tr><td>O IP volta sozinho para automático (DHCP)</td>
+          <td>Para o <b>cinto</b>, acabou: o endereço agora é fixo em <code>192.168.4.1</code>, sempre. Para as <b>câmeras</b>, o <code>.bat</code> fixa o IP da placa por <code>netsh</code> e <b>confere</b> se aplicou.</td></tr>
+      <tr><td>As câmeras não podem pegar nada fora da demarcação do chão</td>
+          <td><b>Área útil:</b> você traça o polígono e o sistema analisa só o que está dentro. A plateia fica fora da análise por construção.</td></tr>
+    </table>
+  </div>
+
+  <h2 class="g">1 · O cinto agora é a rede (modo AP)</h2>
+  <div class="two">
+    <div class="box g">
+      <b class="t">Como fica no dia</b>
+      <ol>
+        <li>Ligue o cinto no <b>power bank</b>.</li>
+        <li>O OLED mostra <b>“CINTO = PONTO ACESSO”</b>, com a rede, a senha e o IP.</li>
+        <li>No notebook, conecte o <b>Wi-Fi</b> na rede <code>Tortuga-Cinto</code> — senha <code>tortuga2026</code>.</li>
+        <li>O <b>cabo de rede</b> continua nas câmeras. São caminhos independentes.</li>
+      </ol>
+      <p class="muted" style="margin-top:6px">O endereço é sempre <code>192.168.4.1</code>. Não há DHCP, não há descoberta, não há IP errado registrado.</p>
+    </div>
+    <div class="box">
+      <b class="t">Trocar de modo (sem regravar)</b>
+      <p>Segure <b>BOOT</b> e aperte <b>RST</b>. O modo alterna, fica salvo na flash e aparece no OLED por 3 s.</p>
+      <table style="margin-top:6px">
+        <tr><th>Modo</th><th>Quando usar</th></tr>
+        <tr><td><b>AP</b> (padrão)</td><td>Rede cabeada, sem internet, sem hotspot — o caso da Arena.</td></tr>
+        <tr><td><b>STA</b></td><td>Quando houver hotspot disponível, como foi na metaindústria.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="box r">
+    <b class="t">Gravar o firmware novo — faça isto ANTES do dia</b>
+    <ol>
+      <li>Arduino IDE → abra <code>firmware/tortuga_esp32/tortuga_esp32.ino</code>.</li>
+      <li>Placa: <b>ESP32 Dev Module</b>. Bibliotecas: as mesmas de antes (WiFiManager, ArduinoJson, Adafruit SSD1306 e GFX). <code>Preferences</code> já vem no core.</li>
+      <li>Grave. No primeiro boot ele entra em <b>modo AP</b> sozinho.</li>
+      <li>Confira no notebook: conecte na rede <code>Tortuga-Cinto</code> e abra <code>http://192.168.4.1/</code> no navegador.
+          Deve aparecer <b>“Tortuga ESP32 OK”</b> com <code>modo=AP</code>.</li>
+      <li>Prova final: <code>testar_cinto.bat</code> com o IP <code>192.168.4.1</code> — o cinto fica vermelho, apita e vibra por ~7 s.</li>
+    </ol>
+    <p class="muted" style="margin-top:5px">O firmware anterior está guardado em <code>tortuga_esp32.ino.ANTES-AP</code>, caso precise voltar.</p>
+  </div>
+
+  <h2 class="g">2 · Área útil — a plateia fora da análise</h2>
+  <div class="box g">
+    <p>Em <code>http://localhost:5005/config</code>, card verde <b>“Área útil”</b>: escolha a câmera, clique nos vértices
+       sobre a demarcação do chão (mínimo 3) e salve. O vídeo aplica em até 4 s, <b>escurecendo tudo que ficou de fora</b>,
+       com contorno verde — você confere o recorte antes de confiar nele.</p>
+    <p style="margin-top:6px"><b>Ao desenhar, pense no pé.</b> O que define se a pessoa está dentro é a base da caixa,
+       não o centro: numa câmera alta e inclinada o tronco pode cair fora enquanto os pés estão dentro, e é o pé que diz
+       onde ela está pisando. Inclua a faixa do chão onde os atores vão pisar, com folga.</p>
+    <p style="margin-top:6px" class="muted">Sem área útil definida, a cena inteira vale — o comportamento de sempre.
+       Para voltar atrás, basta remover a área na mesma tela.</p>
+  </div>
+
+  <h2 class="a">3 · IP das câmeras</h2>
+  <div class="box a">
+    <p>O <code>.bat</code> detecta se o PC já tem endereço na faixa das câmeras. Se não tiver, oferece fixar:</p>
+    <p style="margin-top:4px"><code>netsh interface ip set address name="Ethernet" static 192.168.50.200 255.255.255.0</code></p>
+    <ul style="margin-top:5px">
+      <li>Precisa de <b>janela como administrador</b> — botão direito no <code>.bat</code> → “Executar como administrador”.</li>
+      <li>Depois de aplicar, ele <b>confere</b> no adaptador. Se não aparecer, o nome da placa é outro:
+          rode <code>netsh interface show interface</code> e corrija a variável <code>PLACA</code> no topo do arquivo.</li>
+      <li>No encerramento, ele oferece devolver a placa ao <b>DHCP</b>.</li>
+    </ul>
+    <p class="muted" style="margin-top:5px">Lembre que o endereço das câmeras <b>muda entre visitas</b> — a lousa dizia
+       .108/.109 e a que estava no ar era a .121. O passo seguinte do <code>.bat</code> varre a rede e monta a config sozinho.</p>
+  </div>
+
+  <h2>Ordem do dia</h2>
+  <div class="box">
+    <ol>
+      <li>Cinto no <b>power bank</b> → espere sair da tela de abertura.</li>
+      <li>Notebook: <b>cabo</b> na rede das câmeras, <b>Wi-Fi</b> na rede <code>Tortuga-Cinto</code>.</li>
+      <li>Base de refrigeração ligada, notebook em <b>superfície rígida</b>.</li>
+      <li>Botão direito em <code>demo_auditorio.bat</code> → <b>Executar como administrador</b>.</li>
+      <li>Ele fixa o IP, acha as câmeras, sobe o painel, acha o cinto e abre o vídeo.</li>
+      <li><b>Trace a área útil</b> em <code>/config</code> sobre a demarcação do chão.</li>
+      <li>Minimize as janelas que não for mostrar.</li>
+    </ol>
+  </div>
+
+  <h2>Checklist final</h2>
+  <ul class="chk">
+    <li>Firmware novo gravado e <code>http://192.168.4.1/</code> respondendo <code>modo=AP</code></li>
+    <li>Notebook conectado em <code>Tortuga-Cinto</code> <b>e</b> no cabo das câmeras ao mesmo tempo</li>
+    <li>Cinto reagiu ao <code>testar_cinto.bat</code> (vermelho + apito + vibração)</li>
+    <li>Câmeras entregando vídeo (o passo 3 do <code>.bat</code> confirma)</li>
+    <li><b>Área útil traçada</b> e o lado de fora aparecendo escurecido no vídeo</li>
+    <li>Ator posicionado onde o refletor bate — <b>não</b> na frente da tela de projeção</li>
+    <li>Base de refrigeração ligada e janelas extras minimizadas</li>
+  </ul>
+
+  <div class="note">
+    Se o cinto não aparecer, a apresentação <b>segue normalmente</b>: câmeras, detecção, dashboard e predição não dependem
+    dele — só o alerta no corpo fica mudo. Para tentar de novo sem parar nada, rode <code>diag_cinto.bat</code> em outra janela.
+  </div>
+</div>
+</body>
+</html>

@@ -7,6 +7,7 @@ Teclas: ESPACO pausa  |  Q / ESC sai  |  P toggle pose  |  S session report
 from __future__ import annotations
 import argparse, json, os, sys, threading, time, math, queue
 import cv2, numpy as np
+import roi_filter
 
 os.environ["YOLO_OFFLINE"]        = "1"
 os.environ["ULTRALYTICS_OFFLINE"] = "1"
@@ -721,6 +722,21 @@ class DetectionPipeline:
                 if self._pose is not None:
                     r["pose_risk"]=self._pose.has_immediate_risk(r["people"])
                     r["pose_details"]=self._pose.get_risk_summary(r["people"])
+        # ── AREA UTIL: mantem SOMENTE o que esta dentro do poligono ──
+        # Inverso da exclusao. Quem esta fora (plateia, bastidores, quem passa
+        # atras da demarcacao) some da analise: nao e desenhado, nao conta como
+        # pessoa em cena e nao gera evento.
+        roi=getattr(self,"_roi",None)
+        if roi and _fr is not None:
+            _H,_W=_fr.shape[:2]
+            r["dets"]=roi_filter.filtrar(r.get("dets",[]),roi,_W,_H,usar_pe=False)
+            _ppl=r.get("people")
+            if _ppl:
+                # pessoa: usa o PE (base da caixa) — e onde ela esta pisando
+                r["people"]=roi_filter.filtrar(_ppl,roi,_W,_H,usar_pe=True)
+                if self._pose is not None:
+                    r["pose_risk"]=self._pose.has_immediate_risk(r["people"])
+                    r["pose_details"]=self._pose.get_risk_summary(r["people"])
         r["dets"]=PPEDetector.filter_by_station(r["dets"],required_epis)
         r["hv"]=any(d["is_violation"] for d in r["dets"])
         r["vd"]=[f"{d['class_name']} ({d['confidence']:.0%})"
@@ -833,6 +849,11 @@ class App:
                 if self._ignore_dash:
                     self.pipe._ignore=list(self._ignore_file)+list(self._ignore_dash)
                     print(f"  {len(self._ignore_dash)} zona(s) de exclusao carregada(s) do dashboard")
+                # AREA UTIL: so o que estiver DENTRO do poligono e analisado
+                self.pipe._roi=self._dash.roi()
+                if self.pipe._roi:
+                    print(f"  AREA UTIL ativa: {len(self.pipe._roi)} poligono(s) — "
+                          f"fora dela nada e analisado")
             except Exception as e:
                 print(f"  [aviso] dashboard indisponivel ({e}); seguindo sem ingestão")
 
@@ -949,6 +970,13 @@ class App:
                                 self._ignore_dash=ex
                                 self.pipe._ignore=list(self._ignore_file)+list(ex)
                                 print(f"  [config] zonas de exclusao: {len(ex)} do dashboard")
+                            # AREA UTIL: tambem ao vivo, para o gestor ver o
+                            # contorno verde mudar enquanto desenha no navegador
+                            rz=self._dash.roi()
+                            if rz!=getattr(self.pipe,"_roi",None):
+                                self.pipe._roi=rz
+                                print(f"  [config] AREA UTIL: {len(rz)} poligono(s)"
+                                      + ("" if rz else " — cena inteira liberada"))
                             # calibracao da estacao: aplica SO quando o valor remoto muda,
                             # para nao anular o ajuste local do slider durante um teste.
                             sc=self._dash.station_confidence()
@@ -1055,6 +1083,24 @@ class App:
                 pose_enabled=self.sb.pose_enabled,
                 danger_zones=self._pose_est.danger_zones if self._pose_est else [],
             )
+            # ── AREA UTIL: contorno verde + escurecimento do que fica de FORA ──
+            # Deixa obvio na tela o que o sistema esta analisando. Na Arena isso
+            # e a prova visual de que a plateia esta fora do escopo.
+            _roi_draw=getattr(self.pipe,"_roi",None)
+            if _roi_draw:
+                _polys=roi_filter.para_pixels(_roi_draw,self._cw,self._ch)
+                if _polys:
+                    mask=np.zeros((self._ch,self._cw),dtype=np.uint8)
+                    for p in _polys:
+                        cv2.fillPoly(mask,[np.array(p,dtype=np.int32)],255)
+                    fora=cam.copy()
+                    fora=(fora*0.35).astype(np.uint8)            # escurece o exterior
+                    cam=np.where(mask[:,:,None]>0,cam,fora)
+                    for p in _polys:
+                        cv2.polylines(cam,[np.array(p,dtype=np.int32)],True,(80,230,80),2,cv2.LINE_AA)
+                    _p0=_polys[0][0]
+                    T(cam,"AREA UTIL",max(4,_p0[0]),max(14,_p0[1]-8),sz=0.5,color=(80,230,80))
+
             # Zona(s) de exclusão de máquina — bem visíveis p/ conferir/ajustar
             if getattr(self.pipe,"_ignore",None):
                 for (x1,y1,x2,y2) in self.pipe._ignore:

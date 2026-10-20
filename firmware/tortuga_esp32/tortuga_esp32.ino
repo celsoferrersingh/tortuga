@@ -9,6 +9,11 @@
  * OLED + LED verde/vermelho + buzzer + vibração. Tudo não-bloqueante (millis).
  * Compatível com o core esp32 2.x e 3.x (API do LEDC tratada com #if).
  *
+ * REDE — dois modos, alternados com BOOT+RST (ver bloco abaixo):
+ *   AP  (padrão) o cinto PUBLICA a rede "Tortuga-Cinto" e fica fixo em
+ *                192.168.4.1. O notebook conecta nela; o cabo segue nas câmeras.
+ *   STA          o cinto ENTRA numa rede existente (hotspot), via portal.
+ *
  * Bibliotecas: "Adafruit SSD1306", "Adafruit GFX", "ArduinoJson" (6.x),
  *              "WiFiManager" (by tzapu — instale pelo Library Manager).
  * Placa: ESP32 Dev Module.
@@ -22,19 +27,44 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WiFiManager.h>       // portal de configuracao de WiFi (lib "WiFiManager" by tzapu)
+#include <Preferences.h>       // guarda o modo escolhido na flash (NVS)
 #include "esp_wifi.h"          // economia de energia (modem-sleep)
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// ── Wi-Fi via PORTAL (WiFiManager) ──
-// Nao ha mais SSID/senha fixos aqui. Na 1a vez (ou quando a rede salva nao for
-// encontrada, ex.: ao chegar na metaindustria) o ESP cria a rede "Tortuga-Setup".
-// Conecte o celular nela, abra o navegador, escolha a rede local e digite a senha.
-// Fica salvo na flash. Para APAGAR e reconfigurar: segure BOOT e aperte EN/RST.
+// ════════════════════════════════════════════════════════════════════════════
+//  DOIS MODOS DE REDE
+//
+//  MODO AP (padrao) — O CINTO E O PONTO DE ACESSO.
+//    O ESP publica a rede "Tortuga-Cinto" e fica SEMPRE em 192.168.4.1.
+//    O notebook conecta no Wi-Fi do cinto; o cabo de rede continua livre para
+//    as cameras. Resolve tres problemas de uma vez:
+//      - nao depende do Ponto de acesso movel do Windows, que se recusa a
+//        ligar em rede cabeada SEM INTERNET (foi o que travou no auditorio);
+//      - nao depende de internet nenhuma;
+//      - acaba o IP dinamico: o endereco do cinto e sempre o mesmo, entao
+//        nao ha descoberta, nao ha DHCP, nao ha IP errado registrado.
+//
+//  MODO STA — o cinto ENTRA numa rede existente (comportamento antigo).
+//    Util quando ha hotspot disponivel, como foi na metaindustria.
+//
+//  COMO ALTERNAR: segure BOOT e aperte RST. O modo troca, fica salvo na flash
+//  e aparece no OLED por 3 s. Nao e preciso regravar o firmware.
+// ════════════════════════════════════════════════════════════════════════════
+const char* AP_CINTO   = "Tortuga-Cinto";   // rede que o CINTO publica (modo AP)
+const char* AP_CINTO_PW = "tortuga2026";    // senha dela (minimo 8 caracteres)
+const IPAddress AP_IP(192, 168, 4, 1);      // IP FIXO do cinto no modo AP
+const IPAddress AP_GW(192, 168, 4, 1);
+const IPAddress AP_MASK(255, 255, 255, 0);
+
+// Rede de configuracao do modo STA (portal do WiFiManager)
 const char* AP_NAME = "Tortuga-Setup";
 const char* AP_PASS = "tortuga123";
+
+Preferences prefs;
+bool gModoAP = true;            // definido no setup()
 
 // ── Pinos (mapa REAL do cinto — confirmado pelo firmware do autor do hardware) ──
 const int PIN_LED_OK   = 19;    // LED verde
@@ -167,7 +197,13 @@ void handleStatus() {
 }
 
 void handleRoot() {
-  server.send(200, "text/plain", "Tortuga ESP32 OK. POST /status");
+  // A assinatura "Tortuga ESP32 OK" e o que o diag_cinto.py procura na rede.
+  String s = "Tortuga ESP32 OK. POST /status\n";
+  s += "modo=";
+  s += (gModoAP ? "AP" : "STA");
+  s += "\nip=";
+  s += (gModoAP ? WiFi.softAPIP().toString() : WiFi.localIP().toString());
+  server.send(200, "text/plain", s);
 }
 
 void setup() {
@@ -184,29 +220,66 @@ void setup() {
   oled.setCursor(0, 24); oled.setTextSize(2);
   oled.println("TORTUGA"); oled.display();
 
-  // Portal de configuracao de WiFi (WiFiManager). Se ja houver rede salva e
-  // ela estiver ao alcance, conecta sozinho; senao, abre o portal "Tortuga-Setup".
+  // ── Escolha do modo de rede ──────────────────────────────────────────────
   pinMode(0, INPUT_PULLUP);               // botao BOOT (GPIO0)
-  WiFiManager wm;
-  wm.setConfigPortalTimeout(180);         // 3 min de portal; depois reinicia e tenta de novo
-  wm.setAPCallback([](WiFiManager*) {     // mostra as instrucoes no OLED so quando o portal abre
+  prefs.begin("tortuga", false);
+  gModoAP = prefs.getBool("modo_ap", true);        // padrao de fabrica: modo AP
+  if (digitalRead(0) == LOW) {            // BOOT segurado no reset => ALTERNA o modo
+    gModoAP = !gModoAP;
+    prefs.putBool("modo_ap", gModoAP);
+    Serial.printf("BOOT pressionado: modo alternado para %s\n", gModoAP ? "AP" : "STA");
     oled.clearDisplay(); oled.setTextSize(1); oled.setCursor(0, 0);
-    oled.println("Config WiFi:");
-    oled.print("rede "); oled.println(AP_NAME);
-    oled.print("senha "); oled.println(AP_PASS);
-    oled.println("abra no navegador"); oled.display();
-  });
-  if (digitalRead(0) == LOW) {            // BOOT pressionado no reset => limpar WiFi salvo
-    Serial.println("BOOT pressionado: limpando WiFi salvo.");
-    wm.resetSettings();
+    oled.println("Modo alterado para:");
+    oled.setTextSize(2); oled.setCursor(0, 18);
+    oled.println(gModoAP ? "AP" : "STA");
+    oled.setTextSize(1); oled.setCursor(0, 46);
+    oled.println(gModoAP ? "cinto e a rede" : "cinto entra na rede");
+    oled.display();
+    delay(3000);
   }
-  if (!wm.autoConnect(AP_NAME, AP_PASS)) {
-    Serial.println("WiFi nao configurado; reiniciando...");
-    delay(1500); ESP.restart();
-  }
-  Serial.print("\nIP do ESP32: "); Serial.println(WiFi.localIP());
+  prefs.end();
 
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);   // baixo consumo, mantém o push <1 s
+  if (gModoAP) {
+    // ── MODO AP: o CINTO publica a rede e fica fixo em 192.168.4.1 ──
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(AP_IP, AP_GW, AP_MASK);      // IP fixo: nada de DHCP
+    WiFi.softAP(AP_CINTO, AP_CINTO_PW);
+    Serial.printf("\nMODO AP. Rede: %s  senha: %s\n", AP_CINTO, AP_CINTO_PW);
+    Serial.print("IP do ESP32 (fixo): "); Serial.println(WiFi.softAPIP());
+
+    oled.clearDisplay(); oled.setTextSize(1); oled.setCursor(0, 0);
+    oled.println("CINTO = PONTO ACESSO");
+    oled.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+    oled.setCursor(0, 16); oled.print("rede  "); oled.println(AP_CINTO);
+    oled.setCursor(0, 28); oled.print("senha "); oled.println(AP_CINTO_PW);
+    oled.setCursor(0, 44); oled.println("Conecte o notebook");
+    oled.setCursor(0, 54); oled.print("IP "); oled.println(WiFi.softAPIP());
+    oled.display();
+    delay(4000);                          // tempo de ler antes de ir para CONFORME
+  } else {
+    // ── MODO STA: entra numa rede existente (comportamento antigo) ──
+    WiFi.mode(WIFI_STA);
+    WiFiManager wm;
+    wm.setConfigPortalTimeout(180);       // 3 min de portal; depois reinicia e tenta de novo
+    wm.setAPCallback([](WiFiManager*) {   // instrucoes no OLED quando o portal abre
+      oled.clearDisplay(); oled.setTextSize(1); oled.setCursor(0, 0);
+      oled.println("Config WiFi:");
+      oled.print("rede "); oled.println(AP_NAME);
+      oled.print("senha "); oled.println(AP_PASS);
+      oled.println("abra no navegador"); oled.display();
+    });
+    if (!wm.autoConnect(AP_NAME, AP_PASS)) {
+      Serial.println("WiFi nao configurado; reiniciando...");
+      delay(1500); ESP.restart();
+    }
+    Serial.print("\nMODO STA. IP do ESP32: "); Serial.println(WiFi.localIP());
+    oled.clearDisplay(); oled.setTextSize(1); oled.setCursor(0, 0);
+    oled.println("MODO STA (na rede)");
+    oled.setCursor(0, 20); oled.print("IP "); oled.println(WiFi.localIP());
+    oled.display();
+    delay(2500);
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);   // baixo consumo so faz sentido em STA
+  }
 
   server.on("/", handleRoot);
   server.on("/status", handleStatus);

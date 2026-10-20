@@ -11,6 +11,29 @@ from datetime import datetime, timedelta
 EVENT_TYPES = ["EPI_AUSENTE", "POSTURA_RISCO", "ZONA_CRITICA", "QUEDA", "FADIGA"]
 DEFAULT_EPIS = ["Hardhat", "Safety Vest", "Safety Glasses"]
 
+# ── NR-7 (PCMSO): situação do ASO a partir da VALIDADE ────────────────────────
+# Escopo deliberado e restrito: o sistema conhece apenas a DATA DE VALIDADE do
+# atestado — dado administrativo de conformidade. Resultado de exame, diagnóstico
+# ou restrição são dados de saúde (LGPD Art. 5º II) e NÃO são armazenados aqui.
+ASO_ALERTA_DIAS = 30
+
+
+def aso_status(validade, alerta_dias=ASO_ALERTA_DIAS, hoje=None):
+    """{'status','label','dias','ok'} a partir da data de validade (YYYY-MM-DD)."""
+    if not validade:
+        return {"status": "sem_registro", "label": "Sem registro", "dias": None, "ok": False}
+    try:
+        d = datetime.fromisoformat(str(validade)[:10]).date()
+    except Exception:
+        return {"status": "sem_registro", "label": "Data inválida", "dias": None, "ok": False}
+    hoje = hoje or datetime.now().date()
+    dias = (d - hoje).days
+    if dias < 0:
+        return {"status": "vencido", "label": f"Vencido há {-dias} d", "dias": dias, "ok": False}
+    if dias <= alerta_dias:
+        return {"status": "a_vencer", "label": f"Vence em {dias} d", "dias": dias, "ok": True}
+    return {"status": "em_dia", "label": "Em dia", "dias": dias, "ok": True}
+
 
 class EventStore:
     def __init__(self, db_path="data/tortuga.db"):
@@ -28,7 +51,8 @@ class EventStore:
                 CREATE TABLE IF NOT EXISTS workers (
                     worker_id TEXT PRIMARY KEY, name TEXT NOT NULL, area TEXT NOT NULL,
                     turno TEXT NOT NULL, shifts INTEGER NOT NULL DEFAULT 0,
-                    required_epis TEXT NOT NULL DEFAULT '[]', confidence REAL NOT NULL DEFAULT 0.4);
+                    required_epis TEXT NOT NULL DEFAULT '[]', confidence REAL NOT NULL DEFAULT 0.4,
+                    aso_validade TEXT);
                 CREATE TABLE IF NOT EXISTS belts (
                     device_id TEXT PRIMARY KEY, name TEXT NOT NULL, station_id TEXT,
                     active_worker_id TEXT, updated_at TEXT, esp32_url TEXT);
@@ -42,6 +66,10 @@ class EventStore:
                 CREATE TABLE IF NOT EXISTS exclusions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT 'Maquina',
                     station_id TEXT, rect TEXT NOT NULL DEFAULT '[]',
+                    enabled INTEGER NOT NULL DEFAULT 1);
+                CREATE TABLE IF NOT EXISTS roi (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT 'Area util',
+                    station_id TEXT, points TEXT NOT NULL DEFAULT '[]',
                     enabled INTEGER NOT NULL DEFAULT 1);
                 CREATE TABLE IF NOT EXISTS stations (
                     station_id TEXT PRIMARY KEY, confidence REAL, updated_at TEXT);
@@ -70,22 +98,33 @@ class EventStore:
                 self._conn.execute("ALTER TABLE safety_events ADD COLUMN confidence REAL")
             except Exception:
                 pass
+            # migração: VALIDADE do ASO (NR-7 / PCMSO). Guardamos SÓ a data de
+            # validade — dado administrativo de conformidade, que o RH já controla.
+            # NUNCA resultado de exame, diagnóstico ou restrição: isso é dado de
+            # saúde (LGPD Art. 5º II) e não entra neste sistema.
+            try:
+                self._conn.execute("ALTER TABLE workers ADD COLUMN aso_validade TEXT")
+            except Exception:
+                pass
             self._conn.commit()
 
     # perfis
-    def upsert_worker(self, worker_id, name, area, turno, shifts=0, required_epis=None, confidence=0.4):
+    def upsert_worker(self, worker_id, name, area, turno, shifts=0, required_epis=None,
+                      confidence=0.4, aso_validade=None):
         epis = json.dumps(required_epis if required_epis is not None else DEFAULT_EPIS)
         with self._lock:
-            self._conn.execute("""INSERT INTO workers (worker_id,name,area,turno,shifts,required_epis,confidence)
-                VALUES (?,?,?,?,?,?,?) ON CONFLICT(worker_id) DO UPDATE SET name=excluded.name,
+            self._conn.execute("""INSERT INTO workers
+                (worker_id,name,area,turno,shifts,required_epis,confidence,aso_validade)
+                VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(worker_id) DO UPDATE SET name=excluded.name,
                 area=excluded.area, turno=excluded.turno, shifts=excluded.shifts,
-                required_epis=excluded.required_epis, confidence=excluded.confidence""",
-                (worker_id, name, area, turno, shifts, epis, confidence))
+                required_epis=excluded.required_epis, confidence=excluded.confidence,
+                aso_validade=excluded.aso_validade""",
+                (worker_id, name, area, turno, shifts, epis, confidence, aso_validade))
             self._conn.commit()
 
     def update_profile(self, worker_id, **kw):
         sets, vals = [], []
-        for k in ("name","area","turno","confidence"):
+        for k in ("name","area","turno","confidence","aso_validade"):
             if k in kw: sets.append(k+"=?"); vals.append(kw[k])
         if "required_epis" in kw: sets.append("required_epis=?"); vals.append(json.dumps(kw["required_epis"]))
         if not sets: return
@@ -105,7 +144,10 @@ class EventStore:
 
     @staticmethod
     def _worker(r):
-        d = dict(r); d["required_epis"] = json.loads(r["required_epis"]); return d
+        d = dict(r)
+        d["required_epis"] = json.loads(r["required_epis"])
+        d["aso"] = aso_status(d.get("aso_validade"))   # só situação, nunca conteúdo
+        return d
 
     # cintos + QR
     def upsert_belt(self, device_id, name, station_id=None):
@@ -295,6 +337,55 @@ class EventStore:
         with self._lock:
             self._conn.execute("DELETE FROM exclusions WHERE id=?", (eid,)); self._conn.commit()
 
+    # ── AREA UTIL (regiao de interesse) ──────────────────────────────────────
+    # Poligono normalizado (0..1) que delimita o que o sistema PODE analisar.
+    # E o inverso da zona de exclusao: em vez de remover um pedaco da cena,
+    # mantem SOMENTE o que esta dentro. Sem area util definida, a cena inteira
+    # vale (comportamento anterior preservado).
+    #
+    # Motivacao: na Arena do NEXT so pode ser analisado o que estiver dentro da
+    # demarcacao do chao. A plateia fica fora do poligono e, portanto, fora da
+    # analise — nao vira deteccao, nao vira evento, nao entra no banco.
+    def add_roi(self, name, points, station_id=None):
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO roi (name,station_id,points,enabled) VALUES (?,?,?,1)",
+                (name or "Area util", station_id,
+                 json.dumps([[round(float(x), 4), round(float(y), 4)] for x, y in points])))
+            self._conn.commit(); return cur.lastrowid
+
+    def list_roi(self, station_id=None):
+        with self._lock:
+            if station_id:
+                rows = self._conn.execute(
+                    "SELECT * FROM roi WHERE station_id=? OR station_id IS NULL "
+                    "OR station_id='' ORDER BY id", (station_id,)).fetchall()
+            else:
+                rows = self._conn.execute("SELECT * FROM roi ORDER BY id").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r); d["points"] = json.loads(r["points"]); d["enabled"] = bool(r["enabled"])
+            out.append(d)
+        return out
+
+    def update_roi(self, rid, **kw):
+        sets, vals = [], []
+        for k in ("name", "station_id", "enabled"):
+            if k in kw: sets.append(k + "=?"); vals.append(int(kw[k]) if k == "enabled" else kw[k])
+        if "points" in kw:
+            sets.append("points=?")
+            vals.append(json.dumps([[round(float(x), 4), round(float(y), 4)]
+                                    for x, y in kw["points"]]))
+        if not sets: return
+        vals.append(rid)
+        with self._lock:
+            self._conn.execute("UPDATE roi SET " + ",".join(sets) + " WHERE id=?", vals)
+            self._conn.commit()
+
+    def delete_roi(self, rid):
+        with self._lock:
+            self._conn.execute("DELETE FROM roi WHERE id=?", (rid,)); self._conn.commit()
+
     # classificação manual de risco por ÁREA (override da sugestão da IA)
     def set_area_level(self, area, level):
         with self._lock:
@@ -376,8 +467,39 @@ class EventStore:
         for w in self.get_roster():
             out.append({"worker_id": w["worker_id"], "area": w["area"], "turno": w["turno"],
                 "shifts": int(w["shifts"]), "events": int(epw.get(w["worker_id"], 0)),
-                "name": w["name"], "required_epis": w["required_epis"]})
+                "name": w["name"], "required_epis": w["required_epis"],
+                "aso_validade": w.get("aso_validade"),
+                "aso": aso_status(w.get("aso_validade"))})
         return out
+
+    def aso_report(self, alerta_dias=30):
+        """Conformidade NR-7 (PCMSO) do GRUPO — visão do gestor.
+
+        O agendamento do exame é responsabilidade da empresa, não do operador;
+        por isso o vencimento gera ALERTA AO GESTOR e nunca penalidade no placar.
+        Expõe apenas contagens e datas de validade — nenhum dado clínico.
+        """
+        roster = self.get_roster()
+        buckets = {"em_dia": [], "a_vencer": [], "vencido": [], "sem_registro": []}
+        for w in roster:
+            st = aso_status(w.get("aso_validade"), alerta_dias)
+            buckets[st["status"]].append({
+                "worker_id": w["worker_id"], "name": w["name"], "area": w["area"],
+                "turno": w["turno"], "validade": w.get("aso_validade"),
+                "dias": st["dias"], "label": st["label"]})
+        for k in ("a_vencer", "vencido"):
+            buckets[k].sort(key=lambda x: (x["dias"] is None, x["dias"]))
+        total = len(roster) or 1
+        pendentes = len(buckets["a_vencer"]) + len(buckets["vencido"]) + len(buckets["sem_registro"])
+        return {"total": len(roster),
+                "em_dia": len(buckets["em_dia"]),
+                "a_vencer": len(buckets["a_vencer"]),
+                "vencido": len(buckets["vencido"]),
+                "sem_registro": len(buckets["sem_registro"]),
+                "pct_em_dia": round(100.0 * len(buckets["em_dia"]) / total, 1),
+                "alerta_dias": alerta_dias,
+                "acao_gestor": pendentes,
+                "listas": buckets}
 
     def shifts_with_events_per_worker(self):
         """{worker_id: nº de TURNOS (operador+dia) com ao menos 1 evento}."""
