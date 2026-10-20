@@ -1,7 +1,8 @@
 {
-  "_comment": "Config do AUDITORIO/TEATRO da FIAP — ensaio da Arena NEXT. 2 cameras IP no palco (lousa: 192.168.50.108 e 192.168.50.109). Separada da config da metaindustria (tortuga.config.json), que continua intacta para recuperacao da maquina de producao.",
-  "_rede": "Sub-rede 192.168.50.x — DIFERENTE da metaindustria (10.14.22.x). O PC precisa estar na rede do auditorio para alcancar as cameras.",
-  "_credenciais": "usuario/senha abaixo sao PLACEHOLDER. O demo_fiap_auditorio.bat pergunta e regrava este arquivo. Se nao souber o caminho do stream: python diag_rtsp.py --ip 192.168.50.108 --user admin --pass SENHA --descobrir",
+  "_comment": "Config do AUDITORIO/TEATRO da FIAP — ensaio da Arena NEXT (19/10/2026). Camera CAM01 confirmada pelo professor Fabio: Intelbras VIPC-1230-B-G2, OEM Dahua (mesmo caminho RTSP da metaindustria). Separada da config da metaindustria (tortuga.config.json), que continua intacta.",
+  "_credencial": "usuario alunos3EC / senha FiapSPI@2026 (o @ vira %40 na URL). Fornecida pelo professor para o ensaio.",
+  "_atencao_ip": "A LOUSA dizia 192.168.50.108 e .109, mas a CAM01 que esta no ar e a .121. Enderecos mudam entre visitas — o demo_auditorio.bat varre a faixa e acha as que estiverem vivas.",
+  "_atencao_stream": "subtype=0 e o stream PRINCIPAL (o que o professor passou). Na metaindustria o secundario (subtype=1) foi melhor: a inferencia reduz para 640 px, entao 1080p so gasta banda. Se o subtype=1 responder, prefira ele. O diag_rtsp --compare mede os dois.",
   "dashboard": "http://localhost:5005",
   "device": "cuda",
   "model": "models/best.pt",
@@ -17,14 +18,13 @@
     {
       "station_id": "EST-PALCO1",
       "name": "Palco 1",
-      "source": "rtsp://admin:TROCAR@192.168.50.108:554/cam/realmonitor?channel=1&subtype=1",
-      "headless": false
-    },
-    {
-      "station_id": "EST-PALCO2",
-      "name": "Palco 2",
-      "source": "rtsp://admin:TROCAR@192.168.50.109:554/cam/realmonitor?channel=1&subtype=1",
+      "_ip": "192.168.50.121",
+      "_stream": "secundario",
+      "_resolucao": "704x480",
+      "source": "rtsp://alunos3EC:FiapSPI%402026@192.168.50.121:554/cam/realmonitor?channel=1&subtype=1",
       "headless": false
     }
-  ]
+  ],
+  "_gerado_em": "19/10/2026 20:14",
+  "_gerado_por": "montar_config.py (descoberta automatica)"
 }
