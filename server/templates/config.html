@@ -397,9 +397,13 @@ document.getElementById('rreset').onclick=()=>{rpts=[];rdraw();};
 document.getElementById('rstation').oninput=()=>rdraw();
 document.getElementById('rbgrefresh').onclick=rloadBg;
 document.getElementById('rstpick').onchange=function(){
-  const v=this.value;if(v&&!document.getElementById('rstation').value.trim())
-    document.getElementById('rstation').value=v;
-  rloadBg();};
+  // O campo Estacao SEMPRE acompanha a camera escolhida — igual ao card de zona
+  // de risco. Antes ele so preenchia se estivesse vazio, e um nome que sobrou de
+  // outra camera fazia a area ser salva na estacao errada (ela existia no banco
+  // mas nenhum detector a encontrava). Para valer em TODAS as cameras, escolha a
+  // opcao em branco do seletor: o campo fica vazio = area global.
+  document.getElementById('rstation').value=this.value;
+  rdraw(); rloadBg();};
 document.getElementById('rsave').onclick=async()=>{
   if(rpts.length<3){toast('marque ao menos 3 pontos');return;}
   const name=document.getElementById('rname').value.trim()||'Area util';
